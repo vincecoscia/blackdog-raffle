@@ -5,6 +5,7 @@ const nextConfig = {
   images: {
     domains: ['images.unsplash.com'],
 },
+productionBrowserSourceMaps: true,
 };
 
 module.exports = nextConfig
