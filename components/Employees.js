@@ -157,7 +157,7 @@ export default function Employees(employee) {
         />
         <button
           type="submit"
-          className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded ml-3"
+          className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded ml-4"
         >
           Update Entries
         </button>
