@@ -29,7 +29,7 @@ function MyApp({ Component, pageProps }) {
       {loading ? (
         <div className="">
           <Nav />
-          <div className="flex justify-center items-center w-full min-h-screen md:h-full">
+          <div className="flex justify-center items-center w-full h-screen md:h-full md:mt-24">
             <div className="lds-ellipsis">
               <div></div>
               <div></div>

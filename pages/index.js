@@ -35,7 +35,7 @@ export default function Home(props) {
   };
 
   return (
-    <div>
+    <div className="container min-w-full">
       {/* If Winner exists display here */}
       {winner ? (
         <div className="bg-green-700 text-white font-bold py-2 px-4 rounded mb-5 w-fit">
