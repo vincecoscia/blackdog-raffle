@@ -39,7 +39,7 @@ export default function Employees(employee) {
   }
 
   const [values, setValues] = useState({
-    entries: 0,
+    entries: employeeData.entries,
   });
 
   // Create a function that handles the input change and sets the value
@@ -138,7 +138,7 @@ export default function Employees(employee) {
       </div>
       <div className="flex items-center mt-5">
         <div className="flex items-center">
-          <p className="text-sm font-bold">Entries: </p>
+          <p className="text-sm font-bold">Current Entries: </p>
           <p className="text-sm ml-2">{employeeData.entries}</p>
         </div>
       </div>
