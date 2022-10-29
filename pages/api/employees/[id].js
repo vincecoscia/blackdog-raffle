@@ -35,6 +35,17 @@ export default async function getEmployee(req, res) {
         res.status(400).json({ success: false });
       }
       break;
+    case "DELETE":
+      try {
+        const deletedEmployee = await Employee.deleteOne({ _id: req.query.id });
+        if (!deletedEmployee) {
+          return res.status(400).json({ success: false });
+        }
+        res.status(200).json({ success: true, data: {} });
+      } catch (error) {
+        res.status(400).json({ success: false });
+      }
+      break;
     default:
       res.setHeader("Allow", ["GET", "PUT"]);
       res.status(400).json({ success: false });

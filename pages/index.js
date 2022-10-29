@@ -1,13 +1,10 @@
-import Head from "next/head";
-import Image from "next/image";
 import Link from "next/link";
 import { API_URL } from "../config/index";
-import { useRouter } from "next/router";
 import { useState } from "react";
 import Employees from "../components/Employees";
+import Modal from "../components/modal";
 
 export default function Home(props) {
-  // create a state for winner
   const [winner, setWinner] = useState(null);
 
   // Write a function that determines if the employee has won the raffle by choosing a random employee using the number of entries as the weight
@@ -58,7 +55,7 @@ export default function Home(props) {
           {props.employees.data.length > 0 ? (
             // Make stlyed profile cards for each employee with their image on the left, and firstName and lastName on the right
             props.employees.data.map((employee) => (
-              <Employees key={employee._id} props={employee} />
+              <Employees key={employee._id} props={employee}/>
             ))
           ) : (
             <h3>No Employees</h3>

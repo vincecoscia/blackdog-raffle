@@ -1,17 +1,47 @@
 import Link from "next/link";
 import Image from "next/image";
-import {useState} from "react";
+import { useState } from "react";
 import { useRouter } from "next/router";
 import { API_URL } from "../config/index";
+import Modal from "../components/modal";
 
 export default function Employees(employee) {
+  let [isOpen, setIsOpen] = useState(false);
+
   let employeeData = employee.props;
+
+  const router = useRouter();
+
+  function closeModal() {
+    setIsOpen(false);
+  }
+
+  function openModal() {
+    setIsOpen(true);
+  }
+
+  // Delete employees on button click
+  async function deleteEmployee() {
+    try {
+      const res = await fetch(`${API_URL}/api/employees/${employeeData._id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message);
+      } else {
+        setIsOpen(false);
+        router.reload();
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  }
 
   const [values, setValues] = useState({
     entries: 0,
   });
 
-  const router = useRouter();
   // Create a function that handles the input change and sets the value
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -43,36 +73,48 @@ export default function Employees(employee) {
       console.log("error");
     } else {
       const employee = await res.json();
-      router.push(`/`); 
-      
+      router.push(`/`);
     }
   };
 
   return (
-    <div key={employeeData._id} className="bg-slate-800 rounded-lg shadow-lg p-5">
-      <Link href={`/employee/${employeeData._id}`}>
+    <div
+      key={employeeData._id}
+      className="bg-slate-800 rounded-lg shadow-lg p-5"
+    >
+      {isOpen ? (
+        <Modal
+          closeModal={closeModal}
+          deleteEmployee={deleteEmployee}
+          isOpen
+          employeeData={employeeData}
+        />
+      ) : null}
+      <div className="flex justify-between">
         <div className="flex items-center">
-          {employeeData.imageURL ? (
-            <Image
-              src={employeeData.imageURL}
-              alt={employeeData.firstName}
-              width={80}
-              height={80}
-              layout="fixed"
-              style={{ width: "80px", height: "80px" }}
-              className="rounded-full object-cover overflow-hidden"
-            />
-          ) : (
-            <Image
-              src="/assets/placeholder.jpg"
-              alt={employeeData.firstName}
-              width={80}
-              height={80}
-              layout="fixed"
-              style={{ width: "80px", height: "80px" }}
-              className="rounded-full object-cover overflow-hidden"
-            />
-          )}
+          <Link href={`/employee/${employeeData._id}`}>
+            {employeeData.imageURL ? (
+              <Image
+                src={employeeData.imageURL}
+                alt={employeeData.firstName}
+                width={50}
+                height={50}
+                layout="fixed"
+                style={{ width: "50px", height: "50px" }}
+                className="rounded-full object-cover overflow-hidden"
+              />
+            ) : (
+              <Image
+                src="/assets/placeholder.jpg"
+                alt={employeeData.firstName}
+                width={50}
+                height={50}
+                layout="fixed"
+                style={{ width: "50px", height: "50px" }}
+                className="rounded-full object-cover overflow-hidden"
+              />
+            )}
+          </Link>
           <div className="ml-3">
             <h3 className="text-lg font-bold">
               {employeeData.firstName} {employeeData.lastName}
@@ -80,7 +122,20 @@ export default function Employees(employee) {
             <p className="text-xs">{employeeData.email}</p>
           </div>
         </div>
-      </Link>
+
+        {/* Create a button that opens the components/Modal.js modal */}
+        <button onClick={openModal}>
+          <Image
+            src="/assets/delete.svg"
+            alt="delete"
+            width={20}
+            height={20}
+            layout="fixed"
+            style={{ width: "20px", height: "20px" }}
+            className="align-top mb-5"
+          />
+        </button>
+      </div>
       <div className="flex items-center mt-5">
         <div className="flex items-center">
           <p className="text-sm font-bold">Entries: </p>
