@@ -2,7 +2,6 @@ import Link from "next/link";
 import { API_URL } from "../config/index";
 import { useState } from "react";
 import Employees from "../components/Employees";
-import Modal from "../components/modal";
 
 export default function Home(props) {
   const [winner, setWinner] = useState(null);
