@@ -3,7 +3,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/router";
 import { API_URL } from "../config/index";
-import Modal from "../components/modal";
+import Modal from "../components/Modal";
 
 export default function Employees(employee) {
   let [isOpen, setIsOpen] = useState(false);
