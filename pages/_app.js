@@ -27,9 +27,9 @@ function MyApp({ Component, pageProps }) {
   return (
     <>
       {loading ? (
-        <div>
+        <div className="">
           <Nav />
-          <div className="mx-auto mt-10">
+          <div className="mx-auto w-full">
             <div className="lds-ellipsis">
               <div></div>
               <div></div>
@@ -42,7 +42,7 @@ function MyApp({ Component, pageProps }) {
         <div>
           <Nav />
           <Layout>
-            <Component {...pageProps} />
+            <Component {...pageProps} loading={loading} />
           </Layout>
         </div>
       )}

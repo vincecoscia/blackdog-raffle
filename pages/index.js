@@ -6,6 +6,13 @@ import Employees from "../components/Employees";
 export default function Home(props) {
   const [winner, setWinner] = useState(null);
 
+  // request the number of entries from the API
+  const getEntries = async () => {
+    const res = await fetch(`${API_URL}/api/employees`);
+    const data = await res.json();
+    return data;
+  };
+
   // Write a function that determines if the employee has won the raffle by choosing a random employee using the number of entries as the weight
   const chooseWinner = (employees) => {
     let totalEntries = 0;
@@ -44,7 +51,7 @@ export default function Home(props) {
       </Link>
       <button
         className="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        onClick={() => chooseWinner(props.employees.data)}
+        onClick={() => getEntries().then((employees) => chooseWinner(employees.data))}
       >
         Choose Winner
       </button>
@@ -54,7 +61,11 @@ export default function Home(props) {
           {props.employees.data.length > 0 ? (
             // Make stlyed profile cards for each employee with their image on the left, and firstName and lastName on the right
             props.employees.data.map((employee) => (
-              <Employees key={employee._id} props={employee}/>
+              <Employees
+                key={employee._id}
+                employee={employee}
+                loading={props.loading}
+              />
             ))
           ) : (
             <h3>No Employees</h3>

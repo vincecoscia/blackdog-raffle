@@ -5,10 +5,11 @@ import { useRouter } from "next/router";
 import { API_URL } from "../config/index";
 import Modal from "../components/Modal";
 
-export default function Employees(employee) {
+export default function Employees(props) {
   let [isOpen, setIsOpen] = useState(false);
+  let [entries, setEntries] = useState(props.employee.entries);
 
-  let employeeData = employee.props;
+  let employeeData = props.employee;
 
   const router = useRouter();
 
@@ -31,7 +32,7 @@ export default function Employees(employee) {
         throw new Error(data.message);
       } else {
         setIsOpen(false);
-        router.reload();
+        router.replace(router.asPath);
       }
     } catch (error) {
       console.log(error);
@@ -73,7 +74,8 @@ export default function Employees(employee) {
       console.log("error");
     } else {
       const employee = await res.json();
-      router.push(`/`);
+      setEntries(employee.data.entries);
+      // router.replace(router.asPath);;
     }
   };
 
@@ -139,7 +141,7 @@ export default function Employees(employee) {
       <div className="flex items-center mt-5">
         <div className="flex items-center">
           <p className="text-sm font-bold">Current Entries: </p>
-          <p className="text-sm ml-2">{employeeData.entries}</p>
+          <p className="text-sm ml-2">{entries}</p>
         </div>
       </div>
       <form
