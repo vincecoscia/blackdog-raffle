@@ -7,7 +7,7 @@ export default function RootLayout({ children }) {
   return (
     <div lang="en" className={montserrat.className}>
       <Header />
-      <div className="mx-5 py-8 lg:mx-36 text-white">
+      <div className="mx-5 py-8 lg:mx-36 md:mx-20 text-white">
         <div className="container">{children}</div>
       </div>
     </div>

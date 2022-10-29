@@ -50,7 +50,7 @@ export default function Home(props) {
       </button>
 
       <div className="flex">
-        <div className="grid lg:grid-cols-3 gap-6 my-5 w-full">
+        <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-6 my-5 w-full">
           {props.employees.data.length > 0 ? (
             // Make stlyed profile cards for each employee with their image on the left, and firstName and lastName on the right
             props.employees.data.map((employee) => (

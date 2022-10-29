@@ -51,7 +51,7 @@ export default function CreateEmployee() {
     <Layout>
       <h1 className="text-3xl font-bold mb-5">Add Employee</h1>
       <form onSubmit={handleSubmit}>
-        <div className="grid lg:grid-cols-2 gap-6">
+        <div className="grid lg:grid-cols-2 lg:gap-6">
           <div className="mb-5">
             <label className="block text-sm font-bold mb-2">
               First Name
@@ -78,8 +78,6 @@ export default function CreateEmployee() {
               placeholder="Last Name"
             />
           </div>
-        </div>
-        <div className="grid lg:grid-cols-2 gap-6">
           <div className="mb-5">
             <label className="block text-sm font-bold mb-2">
               Email
