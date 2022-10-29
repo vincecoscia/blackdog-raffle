@@ -43,7 +43,7 @@ export default function Home(props) {
         </button>
       </Link>
       <button
-        className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded"
+        className="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
         onClick={() => chooseWinner(props.employees.data)}
       >
         Choose Winner
@@ -69,7 +69,6 @@ export async function getServerSideProps() {
   console.log(API_URL);
   const res = await fetch(`${API_URL}/api/employees`);
   const employees = await res.json();
-  console.log(employees);
 
   return {
     props: {

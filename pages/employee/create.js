@@ -52,7 +52,7 @@ export default function CreateEmployee() {
       <h1 className="text-3xl font-bold mb-5">Add Employee</h1>
       <form onSubmit={handleSubmit}>
         <div className="grid lg:grid-cols-2 lg:gap-6">
-          <div className="mb-5">
+          <div className="mb-5 lg:mb-0">
             <label className="block text-sm font-bold mb-2">
               First Name
             </label>
@@ -65,7 +65,7 @@ export default function CreateEmployee() {
               placeholder="First Name"
             />
           </div>
-          <div className="mb-5">
+          <div className="lg:mb-0 mb-5">
             <label className="block text-sm font-bold mb-2">
               Last Name
             </label>
@@ -78,7 +78,7 @@ export default function CreateEmployee() {
               placeholder="Last Name"
             />
           </div>
-          <div className="mb-5">
+          <div className="lg:mb-0 mb-5">
             <label className="block text-sm font-bold mb-2">
               Email
             </label>
@@ -91,7 +91,7 @@ export default function CreateEmployee() {
               placeholder="Email"
             />
           </div>
-          <div className="mb-5">
+          <div className="mb-6">
             <label className="block text-sm font-bold mb-2">
               Image URL
             </label>
@@ -108,7 +108,7 @@ export default function CreateEmployee() {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded"
+            className="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
           >
             Add Employee
           </button>
