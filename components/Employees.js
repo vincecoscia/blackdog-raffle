@@ -56,20 +56,20 @@ export default function Employees(employee) {
             <Image
               src={employeeData.imageURL}
               alt={employeeData.firstName}
-              width={100}
-              height={100}
+              width={80}
+              height={80}
               layout="fixed"
-              style={{ width: "100px", height: "100px" }}
+              style={{ width: "80px", height: "80px" }}
               className="rounded-full object-cover overflow-hidden"
             />
           ) : (
             <Image
               src="/assets/placeholder.jpg"
               alt={employeeData.firstName}
-              width={100}
-              height={100}
+              width={80}
+              height={80}
               layout="fixed"
-              style={{ width: "100px", height: "100px" }}
+              style={{ width: "80px", height: "80px" }}
               className="rounded-full object-cover overflow-hidden"
             />
           )}
@@ -77,7 +77,7 @@ export default function Employees(employee) {
             <h3 className="text-lg font-bold">
               {employeeData.firstName} {employeeData.lastName}
             </h3>
-            <p className="text-sm">{employeeData.email}</p>
+            <p className="text-xs">{employeeData.email}</p>
           </div>
         </div>
       </Link>

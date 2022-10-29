@@ -2,7 +2,7 @@ import Image from "next/image";
 
 export default function Nav() {
   return (
-    <nav className=" py-4 lg:px-48 p-5 bg-slate-800 text-white">
+    <nav className=" py-4 lg:px-36 p-5 bg-slate-800 text-white">
       <div className="container flex items-center">
         <Image
           src="/assets/black_dog_logo.png"
