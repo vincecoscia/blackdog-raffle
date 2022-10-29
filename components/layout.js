@@ -1,4 +1,3 @@
-// app/layout.tsx
 import { Montserrat } from "@next/font/google";
 import Header from "./Header";
 // If loading a variable font, you don't need to specify the font weight
