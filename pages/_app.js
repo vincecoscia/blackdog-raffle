@@ -3,6 +3,7 @@ import Layout from "/components/Layout";
 import Nav from "/components/Nav";
 import Router from "next/router";
 import React from "react";
+import { Analytics } from '@vercel/analytics/react';
 
 function MyApp({ Component, pageProps }) {
   const [loading, setLoading] = React.useState(false);
@@ -26,6 +27,7 @@ function MyApp({ Component, pageProps }) {
   }, []);
   return (
     <>
+    
       {loading ? (
         <div className="">
           <Nav />
@@ -46,6 +48,7 @@ function MyApp({ Component, pageProps }) {
           </Layout>
         </div>
       )}
+      <Analytics/>
     </>
   );
 }
