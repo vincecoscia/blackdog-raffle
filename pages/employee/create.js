@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
+import { useSession } from "next-auth/react";
 import Layout from "../../components/Layout";
 import { API_URL } from "../../config/index";
 
@@ -9,7 +10,12 @@ export default function CreateEmployee() {
     lastName: "",
     email: "",
     imageURL: "",
+    user: "",
   });
+
+  console.log(values);
+
+  const { data: session } = useSession();
 
   const router = useRouter();
 
@@ -26,13 +32,21 @@ export default function CreateEmployee() {
       alert("Please fill in all fields");
     }
 
-    const res = await fetch(`${API_URL}/api/employees`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(values),
-    });
+    // Set user to the session user email
+    values.user = session.user.email;
+
+    // Make sure values.user ends in @blackdogadvertising.com to prevent unauthorized users from creating employees
+    if (!values.user.endsWith("@blackdogadvertising.com")) {
+      alert("You are not authorized to create employees");
+      return;
+    }
+      const res = await fetch(`${API_URL}/api/employees`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(values),
+      });
 
     if (!res.ok) {
       console.log("error");
