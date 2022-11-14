@@ -4,8 +4,10 @@ import Nav from "/components/Nav";
 import Router from "next/router";
 import React from "react";
 import { Analytics } from '@vercel/analytics/react';
+import { SessionProvider } from "next-auth/react"
 
-function MyApp({ Component, pageProps }) {
+
+function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   const [loading, setLoading] = React.useState(false);
   React.useEffect(() => {
     const start = () => {
@@ -27,9 +29,8 @@ function MyApp({ Component, pageProps }) {
   }, []);
   return (
     <>
-    
       {loading ? (
-        <div className="">
+        <SessionProvider session={session}>
           <Nav />
           <div className="flex justify-center items-center w-full h-screen md:h-full md:mt-24">
             <div className="lds-ellipsis">
@@ -39,14 +40,14 @@ function MyApp({ Component, pageProps }) {
               <div></div>
             </div>
           </div>
-        </div>
+        </SessionProvider>
       ) : (
-        <div>
+        <SessionProvider session={session}>
           <Nav />
           <Layout>
             <Component {...pageProps} loading={loading} />
           </Layout>
-        </div>
+        </SessionProvider>
       )}
       <Analytics/>
     </>

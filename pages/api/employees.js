@@ -1,5 +1,7 @@
 import connectDB from "../../db/connection";
 import Employee from "../../db/models/Employee";
+import { unstable_getServerSession } from "next-auth/next"
+import { authOptions } from "./auth/[...nextauth]"
 
 export default async function employeeHandler (req, res) {
 
@@ -8,7 +10,6 @@ export default async function employeeHandler (req, res) {
   });
 
   const { method } = req;
-
   switch (method) {
     case "GET":
       try {
