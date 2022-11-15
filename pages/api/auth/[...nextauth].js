@@ -12,6 +12,14 @@ export default NextAuth({
       clientSecret: process.env.GOOGLE_SECRET
     }),
   ],
+  callbacks: {
+    async signIn({ account, profile }) {
+      if (account.provider === "google") {
+        return profile.email_verified && profile.email.endsWith("@blackdogadvertising.com")
+      }
+      return true // Do different verification for other providers that don't have `email_verified`
+    },
+  },
   jwt: {
     signingKey: process.env.JWT_SIGNING_PRIVATE_KEY,
   },
