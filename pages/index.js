@@ -15,8 +15,6 @@ export default function Home(props) {
     return data;
   };
 
-  console.log(session);
-
   // Write a function that determines if the employee has won the raffle by choosing a random employee using the number of entries as the weight
   const chooseWinner = (employees) => {
     let totalEntries = 0;
