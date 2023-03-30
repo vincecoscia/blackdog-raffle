@@ -1,5 +1,6 @@
 import connectDB from "../../../db/connection";
 import Employee from "../../../db/models/Employee";
+import Raffle from "../../../db/models/Raffle";
 
 export default async function getEmployee(req, res) {
   await connectDB().catch((err) => {
@@ -12,7 +13,13 @@ export default async function getEmployee(req, res) {
     case "GET":
       try {
         const employee = await Employee.findById(req.query.id);
-        res.status(200).json({ success: true, data: employee });
+        // Find all raffles the employee has won
+        const raffles = await Raffle.find({ winner: employee._id });
+        // If there are no raffles, return an empty array
+        if (!raffles) {
+          return res.status(200).json({ success: true, data: employee, raffles: [] });
+        }
+        res.status(200).json({ success: true, data: employee, raffles });
       } catch (error) {
         res.status(400).json({ success: false });
       }

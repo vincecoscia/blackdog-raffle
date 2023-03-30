@@ -1,5 +1,3 @@
-// Create a model for the Employee collection
-
 const mongoose = require('mongoose');
 
 const EmployeeSchema = new mongoose.Schema({
@@ -22,7 +20,7 @@ const EmployeeSchema = new mongoose.Schema({
   user: {
     type: String,
     required: true
-  }
+  },
 });
 
 module.exports = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);

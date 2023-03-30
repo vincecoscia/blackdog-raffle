@@ -43,13 +43,13 @@ export default function Employees(props) {
     entries: employeeData.entries,
   });
 
-  // Create a function that handles the input change and sets the value
+  // handles the input change and sets the value
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setValues({ ...values, [name]: value });
   };
 
-  // create a function that handles the form submission
+  // handle the form submission
   const handleEntryUpdate = async (e) => {
     e.preventDefault();
 

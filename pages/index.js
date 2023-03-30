@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { useSession, signIn } from "next-auth/react";
+import { getSession } from "next-auth/react";
 import { API_URL } from "../config/index";
 import { useState } from "react";
 import Employees from "../components/Employees";
@@ -7,6 +8,12 @@ import Employees from "../components/Employees";
 export default function Home(props) {
   const { data: session } = useSession();
   const [winner, setWinner] = useState(null);
+
+  if (!session) {
+    props= null;
+  }
+
+  console.log(props)
 
   // request the number of entries from the API
   const getEntries = async () => {
@@ -16,7 +23,7 @@ export default function Home(props) {
   };
 
   // Write a function that determines if the employee has won the raffle by choosing a random employee using the number of entries as the weight
-  const chooseWinner = (employees) => {
+  const chooseWinner = async (employees) => {
     let totalEntries = 0;
     employees.forEach((employee) => {
       totalEntries += employee.entries;
@@ -28,11 +35,25 @@ export default function Home(props) {
       currentTotal += employees[i].entries;
       if (randomNum < currentTotal) {
         winner = employees[i];
+        console.log(winner)
+        const res = await fetch(`${API_URL}/api/raffle`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ winner, date: new Date().toLocaleDateString() }),
+        });
+
+        if (!res.ok) {
+          console.log("error");
+        } else {
+          const raffle = await res.json();
+          console.log(raffle);
+        }
         setWinner(winner);
         break;
       }
     }
-    console.log(winner);
     return winner;
   };
   if (session) {
@@ -96,8 +117,15 @@ export default function Home(props) {
   }
 }
 
-export async function getServerSideProps() {
-  console.log(API_URL);
+export async function getServerSideProps(ctx) {
+  const session = await getSession(ctx);
+
+  if (!session) {
+    return {
+      props: {},
+    };
+  }
+  
   const res = await fetch(`${API_URL}/api/employees`);
   const employees = await res.json();
 

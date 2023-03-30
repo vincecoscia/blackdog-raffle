@@ -3,9 +3,10 @@ import Layout from "/components/Layout";
 import Nav from "/components/Nav";
 import Router from "next/router";
 import React from "react";
-import { Analytics } from '@vercel/analytics/react';
-import { SessionProvider } from "next-auth/react"
-
+import { Analytics } from "@vercel/analytics/react";
+import { SessionProvider } from "next-auth/react";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   const [loading, setLoading] = React.useState(false);
@@ -49,7 +50,19 @@ function MyApp({ Component, pageProps: { session, ...pageProps } }) {
           </Layout>
         </SessionProvider>
       )}
-      <Analytics/>
+      <Analytics />
+      <ToastContainer
+        position="bottom-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+      />
     </>
   );
 }
