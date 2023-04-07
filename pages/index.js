@@ -84,7 +84,6 @@ export default function Home(props) {
         <div className="flex">
           <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-6 my-5 w-full">
             {props.employees.data.length > 0 ? (
-              // Make stlyed profile cards for each employee with their image on the left, and firstName and lastName on the right
               props.employees.data.map((employee) => (
                 <Employees
                   key={employee._id}
@@ -128,6 +127,17 @@ export async function getServerSideProps(ctx) {
   
   const res = await fetch(`${API_URL}/api/employees`);
   const employees = await res.json();
+
+  // Sorting employees by first name
+  employees.data.sort((a, b) => {
+    if (a.firstName < b.firstName) {
+      return -1;
+    }
+    if (a.firstName > b.firstName) {
+      return 1;
+    }
+    return 0;
+  });
 
   return {
     props: {

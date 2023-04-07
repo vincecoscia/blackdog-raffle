@@ -124,8 +124,6 @@ export default function Employees(props) {
             <p className="text-xs">{employeeData.email}</p>
           </div>
         </div>
-
-        {/* Create a button that opens the components/Modal.js modal */}
         <button onClick={openModal}>
           <Image
             src="/assets/delete.svg"
