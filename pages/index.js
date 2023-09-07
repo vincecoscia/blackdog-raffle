@@ -106,7 +106,7 @@ export default function Home(props) {
             </h1>
           </div>
         ) : null} */}
-        <div className="flex justify-center items-center mb-8">
+        <div className="flex justify-center mb-8">
           <RaffleSlotMachine employees={employees} onRaffleCompleted={handleRaffleCompleted} />
         </div>
         <Link href="/employee/create">
