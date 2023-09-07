@@ -10,7 +10,7 @@ const RaffleSlotMachine = ({ employees, onRaffleCompleted }) => {
     angle: 90,
     spread: 360,
     startVelocity: 30,
-    elementCount: 50,
+    elementCount: 400,
     dragFriction: 0.1,
     duration: 5000,
     stagger: 0,
