@@ -99,7 +99,8 @@ export default function EmployeePage(props) {
   if (!editMode) {
     return (
       <Layout>
-        <div className="flex ">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex">
           {isOpen ? (
             <Modal
               closeModal={closeModal}
@@ -199,11 +200,13 @@ export default function EmployeePage(props) {
             <h3 className="text-2xl font-bold">No Raffles Won</h3>
           )}
         </div>
+        </div>
       </Layout>
     );
   }
   return (
     <Layout>
+      <div className="max-w-2xl mx-auto">
       <button
         className="flex items-center text-slate-500 mb-4"
         onClick={() => setEditMode(!editMode)}
@@ -279,6 +282,7 @@ export default function EmployeePage(props) {
           Save
         </button>
       </form>
+      </div>
     </Layout>
   );
 }
