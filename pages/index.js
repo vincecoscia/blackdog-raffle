@@ -4,10 +4,49 @@ import { getSession } from "next-auth/react";
 import { API_URL } from "../config/index";
 import { useState } from "react";
 import Employees from "../components/Employees";
+import RaffleSlotMachine from '../components/RaffleSlotMachine';
 
 export default function Home(props) {
   const { data: session } = useSession();
   const [winner, setWinner] = useState(null);
+  const [employees, setEmployees] = useState(props.employees.data);
+
+  const refetchEmployees = async () => {
+    // Make an API call to get the latest employee data
+    const res = await fetch(`${API_URL}/api/employees`);
+    const data = await res.json();
+
+    // Sorting employees by first name
+    data.data.sort((a, b) => {
+      if (a.firstName < b.firstName) {
+        return -1;
+      }
+      if (a.firstName > b.firstName) {
+        return 1;
+      }
+      return 0;
+    });
+    
+    setEmployees(data.data);
+  };
+
+  const handleReset = async () => {
+    const res = await fetch(`${API_URL}/api/reset-entries`, {
+      method: "PUT",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message);
+    } else {
+      refetchEmployees();
+    }
+  };
+
+
+  const handleRaffleCompleted = (winner) => {
+    console.log('Raffle completed. Winner:', winner.firstName);
+    // Here, you can implement additional logic, such as updating the database
+  };
 
   if (!session) {
     props= null;
@@ -21,8 +60,8 @@ export default function Home(props) {
     const data = await res.json();
     return data;
   };
+  
 
-  // Write a function that determines if the employee has won the raffle by choosing a random employee using the number of entries as the weight
   const chooseWinner = async (employees) => {
     let totalEntries = 0;
     employees.forEach((employee) => {
@@ -58,37 +97,37 @@ export default function Home(props) {
   };
   if (session) {
     return (
-      <div className="container min-w-full">
+      <div className="container min-w-full overflow-hidden">
         {/* If Winner exists display here */}
-        {winner ? (
+        {/* {winner ? (
           <div className="bg-green-700 text-white font-bold py-2 px-4 rounded mb-5 w-fit">
             <h1>
               Winner: {winner.firstName} {winner.lastName}
             </h1>
           </div>
-        ) : null}
+        ) : null} */}
+        <div className="flex justify-center items-center mb-8">
+          <RaffleSlotMachine employees={employees} onRaffleCompleted={handleRaffleCompleted} />
+        </div>
         <Link href="/employee/create">
           <button className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded mr-5">
             Add Employee
           </button>
         </Link>
-        <button
-          className="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          onClick={() =>
-            getEntries().then((employees) => chooseWinner(employees.data))
-          }
-        >
-          Choose Winner
+        <button onClick={handleReset} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+          Reset Entries
         </button>
+
 
         <div className="flex">
           <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-6 my-5 w-full">
-            {props.employees.data.length > 0 ? (
-              props.employees.data.map((employee) => (
+            {employees.length > 0 ? (
+              employees.map((employee) => (
                 <Employees
                   key={employee._id}
                   employee={employee}
                   loading={props.loading}
+                  refetch={refetchEmployees}
                 />
               ))
             ) : (

@@ -1,13 +1,15 @@
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { API_URL } from "../config/index";
 import Modal from "../components/Modal";
 
 export default function Employees(props) {
   let [isOpen, setIsOpen] = useState(false);
-  let [entries, setEntries] = useState(props.employee.entries);
+  let [entries, setEntries] = useState(props.employee.entries || []);
+
+  const { refetch } = props; 
 
   let employeeData = props.employee;
 
@@ -33,6 +35,7 @@ export default function Employees(props) {
       } else {
         setIsOpen(false);
         router.replace(router.asPath);
+        refetch();
       }
     } catch (error) {
       console.log(error);
@@ -75,9 +78,14 @@ export default function Employees(props) {
     } else {
       const employee = await res.json();
       setEntries(employee.data.entries);
-      // router.replace(router.asPath);;
+      refetch();
     }
   };
+
+  useEffect(() => {
+    setEntries(employeeData.entries);
+    setValues({ entries: employeeData.entries });
+  }, [employeeData.entries]);
 
   return (
     <div
