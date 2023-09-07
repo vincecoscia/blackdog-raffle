@@ -13,7 +13,7 @@ const RaffleSlotMachine = ({ employees, onRaffleCompleted }) => {
     elementCount: 400,
     dragFriction: 0.1,
     duration: 5000,
-    stagger: 0,
+    stagger: 0.1,
     width: "10px",
     height: "10px",
     perspective: "500px",
@@ -75,13 +75,16 @@ const RaffleSlotMachine = ({ employees, onRaffleCompleted }) => {
           Start Raffle
         </button>
         <div className='w-96 pr-6'>
-          <div className="flex items-center justify-center w-full h-16 p-1 bg-white rounded shadow-md ml-6">
+          <div className="flex items-center justify-center w-full h-16 p-1 bg-white rounded shadow-md ml-6 relative">
+          <div className="absolute -top-1">
+            <Confetti active={ confettiActive } config={ confettiConfig } />
+          </div>
           <span className="text-xl font-semibold text-blue-900">
             {currentEmployee
               ? `${currentEmployee.firstName} ${currentEmployee.lastName}`
               : '---'}
           </span>
-          <Confetti active={ confettiActive } config={ confettiConfig } />
+          
         </div>
         </div>
 
