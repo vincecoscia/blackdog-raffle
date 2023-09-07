@@ -63,19 +63,19 @@ const RaffleSlotMachine = ({ employees, onRaffleCompleted }) => {
 
   return (
     <>
-      <div className="flex items-center p-6 bg-slate-800 rounded-xl shadow-md">
+      <div className="flex w-full lg:w-auto lg:flex-row flex-col-reverse justify-center lg:justify-start items-center p-6 bg-slate-800 rounded-xl shadow-md">
       
         <button
           onClick={startRaffle}
           disabled={raffleInProgress}
-          className={`px-6 py-2 h-full text-white font-semibold bg-blue-500 rounded shadow-md transition duration-200 ease-in-out hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+          className={`mt-4 lg:mt-0 w-full lg:w-auto px-6 py-2 h-full text-white font-semibold bg-blue-500 rounded shadow-md transition duration-200 ease-in-out hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
             raffleInProgress ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
           Start Raffle
         </button>
-        <div className='w-96 pr-6'>
-          <div className="flex items-center justify-center w-full h-16 p-1 bg-white rounded shadow-md ml-6 relative">
+        <div className='lg:w-96 w-full lg:pr-6'>
+          <div className="flex items-center justify-center w-full h-16 p-1 bg-white rounded shadow-md lg:ml-6 relative">
           <div className="absolute -top-1">
             <Confetti active={ confettiActive } config={ confettiConfig } />
           </div>

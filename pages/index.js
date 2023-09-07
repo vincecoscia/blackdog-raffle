@@ -97,7 +97,7 @@ export default function Home(props) {
   };
   if (session) {
     return (
-      <div className="container min-w-full overflow-hidden">
+      <div className="container min-w-full overflow-x-hidden lg:overflow-x-auto">
         {/* If Winner exists display here */}
         {/* {winner ? (
           <div className="bg-green-700 text-white font-bold py-2 px-4 rounded mb-5 w-fit">
