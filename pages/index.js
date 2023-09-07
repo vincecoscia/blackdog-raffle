@@ -9,7 +9,7 @@ import RaffleSlotMachine from '../components/RaffleSlotMachine';
 export default function Home(props) {
   const { data: session } = useSession();
   const [winner, setWinner] = useState(null);
-  const [employees, setEmployees] = useState(props.employees.data);
+  const [employees, setEmployees] = useState(props.employees?.data ?? []);
 
   const refetchEmployees = async () => {
     // Make an API call to get the latest employee data
@@ -26,7 +26,7 @@ export default function Home(props) {
       }
       return 0;
     });
-    
+
     setEmployees(data.data);
   };
 
