@@ -9,6 +9,7 @@ import RaffleSlotMachine from '../components/RaffleSlotMachine';
 export default function Home(props) {
   const { data: session } = useSession();
   const [winner, setWinner] = useState(null);
+  const [entries, setEntries] = useState(0);
   const [employees, setEmployees] = useState(props.employees?.data ?? []);
 
   const refetchEmployees = async () => {
@@ -95,6 +96,23 @@ export default function Home(props) {
     }
     return winner;
   };
+
+  const setAllEntries = async (employees, entries) => {
+    for (let i = 0; i < employees.length; i++) {
+      const res = await fetch(`${API_URL}/api/employees/${employees[i]._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ entries }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message);
+      }
+    }
+  }
+
   if (session) {
     return (
       <div className="container min-w-full overflow-x-hidden lg:overflow-x-auto">
@@ -109,14 +127,37 @@ export default function Home(props) {
         <div className="flex justify-center mb-8">
           <RaffleSlotMachine employees={employees} onRaffleCompleted={handleRaffleCompleted} />
         </div>
+        <div className="flex gap-x-5 flex-col lg:flex-row gap-y-4">
+          <div className="flex gap-x-5">
         <Link href="/employee/create">
-          <button className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded mr-5">
+          <button className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
             Add Employee
           </button>
         </Link>
         <button onClick={handleReset} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
           Reset Entries
         </button>
+        </div>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          const entries = e.target.elements.entries.value;
+          await setAllEntries(employees, entries);
+          refetchEmployees();
+        }}>
+          {/* Set Entries to input */}
+          <input
+            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-l w-44"
+            type="number"
+            name="entries"
+            placeholder="Set All Entries"
+            min="0"
+            max="100"
+          />
+          <button className="bg-green-800 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-r">
+            Set Entries
+          </button>
+        </form>
+        </div>
 
 
         <div className="flex">
