@@ -146,15 +146,15 @@ export default function Home(props) {
         }}>
           {/* Set Entries to input */}
           <input
-            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-l w-44"
+            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-l"
             type="number"
             name="entries"
-            placeholder="Set All Entries"
+            placeholder="0"
             min="0"
             max="100"
           />
           <button className="bg-green-800 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-r">
-            Set Entries
+            Set All Entries
           </button>
         </form>
         </div>
