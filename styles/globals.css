@@ -41,7 +41,6 @@
   --animate-ring-spin: ring-spin 6s linear infinite;
   --animate-shine: shine 1.4s var(--ease-out-expo) both;
   --animate-float: float 14s ease-in-out infinite alternate;
-  --animate-pulse-glow: pulse-glow 2.4s ease-in-out infinite;
   --animate-pop: pop 0.5s var(--ease-spring) both;
   --animate-progress: progress 1.2s ease-out infinite;
   --animate-marquee: marquee 40s linear infinite;
@@ -85,15 +84,6 @@
     }
     to {
       transform: translate3d(6%, -8%, 0) scale(1.12);
-    }
-  }
-  @keyframes pulse-glow {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1px rgb(119 221 175 / 0.25), 0 0 28px -6px rgb(119 221 175 / 0.35);
-    }
-    50% {
-      box-shadow: 0 0 0 1px rgb(119 221 175 / 0.55), 0 0 56px -6px rgb(119 221 175 / 0.7);
     }
   }
   @keyframes pop {
@@ -182,6 +172,28 @@
   .btn-primary {
     @apply bg-linear-to-b from-accent-300 to-accent-500 text-ink-950 shadow-[0_1px_0_rgb(255_255_255/.45)_inset,0_8px_24px_-8px_rgb(119_221_175/.55)];
     @apply hover:from-accent-200 hover:to-accent-400 hover:shadow-glow active:translate-y-px;
+  }
+  /* A breathing glow. Only the opacity of a fixed glow animates, so it runs on
+     the compositor: animating the box-shadow itself repainted the button and
+     its big blur every frame, which was a large share of the cost on phones. */
+  .pulse-glow {
+    position: relative;
+  }
+  .pulse-glow::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 0 1px rgb(119 221 175 / 0.55), 0 0 56px -6px rgb(119 221 175 / 0.7);
+    opacity: 0.35;
+    pointer-events: none;
+    will-change: opacity;
+    animation: pulse-glow 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-glow {
+    50% {
+      opacity: 1;
+    }
   }
   .btn-secondary {
     @apply border border-white/10 bg-white/5 text-ink-100 hover:border-white/20 hover:bg-white/8 active:translate-y-px;

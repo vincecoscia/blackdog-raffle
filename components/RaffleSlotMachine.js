@@ -293,7 +293,13 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
             ) : (
               <>
                 {renderer === "scene" && (
-                  <DogFetch participants={participants} onReady={setScene} onLanded={landed} onSuspense={suspense} />
+                  <DogFetch
+                    participants={participants}
+                    covered={Boolean(reveal)}
+                    onReady={setScene}
+                    onLanded={landed}
+                    onSuspense={suspense}
+                  />
                 )}
                 {showShuffle && (
                   <div className="absolute inset-0 bg-ink-950">
@@ -323,7 +329,7 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
               onClick={draw}
               disabled={busy || players === 0}
               className={`btn btn-primary flex-1 ${big ? "h-14 text-lg sm:max-w-sm" : "h-13 text-base sm:max-w-xs"} ${
-                phase === "idle" && players > 0 ? "animate-pulse-glow" : ""
+                phase === "idle" && players > 0 ? "pulse-glow" : ""
               }`}
             >
               {phase === "drawing" ? <Spinner size={18} /> : <SparklesIcon size={18} />}

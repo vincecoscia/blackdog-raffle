@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { dogDefs } from "@/lib/card-dog";
+import { BONE_ART, BONE_EMBOSS, BONE_INK, BONE_PATH, boneDefs } from "@/lib/bone";
+import { dogCoatFilter, dogDefs } from "@/lib/card-dog";
 import { sfx } from "@/lib/sound";
 import {
   DEFAULT_MOON,
@@ -33,7 +34,7 @@ import {
  * engine hands { draw, reset } to the parent via `onReady` (this is loaded
  * through next/dynamic, which doesn't forward refs).
  */
-export default function DogFetch({ participants, onReady, onLanded, onSuspense }) {
+export default function DogFetch({ participants, covered = false, onReady, onLanded, onSuspense }) {
   const host = useRef(null);
   const engine = useRef(null);
   const callbacks = useRef({ onReady, onLanded, onSuspense });
@@ -57,8 +58,22 @@ export default function DogFetch({ participants, onReady, onLanded, onSuspense }
     engine.current?.setParticipants(participants);
   }, [participants]);
 
-  return <div ref={host} className="absolute inset-0" aria-hidden="true" />;
+  useEffect(() => {
+    engine.current?.setCovered(covered);
+  }, [covered]);
+
+  return <div ref={host} className="absolute inset-0" style={BACKDROP} aria-hidden="true" />;
 }
+
+// The static backdrop (glow + faint dot grid) is plain CSS behind the SVG, and
+// the SVG gets its own compositor layer: redrawing the animated dog then only
+// repaints the scene itself, never the backdrop, the stage's inset shadow or
+// the page around it. (Both were a big share of the work on phones.)
+const BACKDROP = {
+  background:
+    "radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.06) 1.1px, transparent 1.3px) 0 0 / 26px 26px, " +
+    "radial-gradient(75% 75% at 55% 42%, #10211b, #070709)",
+};
 
 // ---------------------------------------------------------------------------
 // Look
@@ -68,10 +83,6 @@ const INK = "#0a0a0d"; // the dog
 const INK_FAR = "#202027"; // far-side legs, a touch lighter for depth
 const EDGE = "#32323c"; // hairline that separates near-side legs from the body
 const DETAIL = "#34343f"; // brow, lip and toe lines
-const BONE = "#f2e8d5";
-const BONE_SHADE = "#d6c5a4";
-const BONE_LINE = "#1d1914";
-const BONE_INK = "#2a2320";
 const FONT = "font-family: var(--font-bricolage), var(--font-inter), ui-sans-serif, sans-serif; font-weight: 800";
 
 // ---------------------------------------------------------------------------
@@ -120,6 +131,11 @@ const GAIT_LENGTH = 80; // ground covered per full stride cycle
 const TAIL_SEGMENTS = [14, 13, 12, 10.5, 9, 7.5, 6, 4.5]; // widths, base to tip
 const TAIL_SEG_LEN = 10.6;
 const TAIL_BEND = 5 / TAIL_SEGMENTS.length; // pose curl is tuned for a 5-segment tail
+// Rim light, drawn just inside the top edges: back → chest (hips frame) and
+// skull → brow → muzzle (head frame). Each gets a crisp line plus a faint
+// wide band below it for sheen.
+const BODY_RIM = "M -32.3 -9.8 A 34.4 34.4 0 0 1 0 -32.4 C 30 -38.4 62 -41.4 92 -33.3 A 36.4 39.4 0 0 1 126.5 -13.7";
+const HEAD_RIM = "M -23.3 -16.3 A 28.4 28.4 0 0 1 14.2 -24.6 C 19 -24 24 -21 27.5 -16.6 C 44 -14.4 64 -10.4 79.5 -8.4";
 
 // Poses are blended stand → sit and stand → dig.
 //   hipH: hip height; p: torso pitch (negative lifts the chest);
@@ -132,9 +148,6 @@ const POSES = {
 };
 const POSE_KEYS = Object.keys(POSES.stand);
 
-// Classic dog-bone outline: a shaft with two overlapping knobs at each end.
-const BONE_PATH =
-  "M -33 -11 L 33 -11 A 15 15 0 1 1 58.2 0 A 15 15 0 1 1 33 11 L -33 11 A 15 15 0 1 1 -58.2 0 A 15 15 0 1 1 -33 -11 Z";
 const STAR_PATH = "M 0 -8 L 2 -2 L 8 0 L 2 2 L 0 8 L -2 2 L -8 0 L -2 -2 Z";
 const TOES = "M 9.5 -4 L 10 1.5 M 14 -3 L 14.5 1.5"; // on a paw centred at (5, 0)
 
@@ -149,6 +162,10 @@ const el = (tag, attrs, parent) => {
   return node;
 };
 const deg = (r) => (r * 180) / Math.PI;
+/** setAttribute, skipped when the value hasn't changed. */
+const setAttr = (node, name, value) => {
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+};
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -166,6 +183,24 @@ const queryParam = (name) => {
     return null;
   }
 };
+
+/**
+ * Render quality. "rich" lights the dog's coat with an SVG filter; "lean" is
+ * the same dog with drawn rim-light strokes. Lean from the start where the
+ * filter is known to struggle: Safari paints SVG filters on the CPU, every
+ * iPhone/iPad browser is Safari underneath, and phones can't afford it.
+ * Desktop browsers start rich, and any that can't hold the frame rate drop to
+ * lean by themselves (see the frame loop). `?quality=rich|lean` overrides it.
+ */
+function pickQuality() {
+  const q = queryParam("quality");
+  if (q === "rich" || q === "lean") return q;
+  const ua = navigator.userAgent;
+  const safari = /AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg|OPR/.test(ua);
+  const apple = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const phone = /Mobi|Android/.test(ua) || window.matchMedia("(pointer: coarse)").matches;
+  return safari || apple || phone ? "lean" : "rich";
+}
 
 /** Seasonal skin by date (lib/themes CALENDAR); `?theme=<name>|none` overrides it for previews. */
 function pickTheme() {
@@ -198,10 +233,19 @@ function ik(A, T, L1, L2, kneeForward) {
 
 function createEngine(host, callbacks) {
   const theme = pickTheme();
+  let quality = pickQuality();
   const forcedVariant = VARIANTS.includes(queryParam("variant")) ? queryParam("variant") : null;
 
   // ---- svg + stage -----------------------------------------------------------
-  const svg = el("svg", { width: "100%", height: "100%", style: "position:absolute;inset:0;display:block" }, host);
+  // Three stacked SVG layers share the camera. The sky (spotlight, seasonal
+  // rays, bats, fireworks, far particles) and the near particles each get their
+  // own compositor layer, so things that move every frame only repaint
+  // themselves — not the much heavier scene of bones and dog in between.
+  const layer = (extraStyle = "") =>
+    el("svg", { width: "100%", height: "100%", style: `position:absolute;inset:0;display:block;will-change:transform${extraStyle}` }, host);
+  const skySvg = layer();
+  const svg = layer();
+  const nearSvg = layer(";pointer-events:none");
   el("style", {}, svg).textContent =
     '[data-part="dog"],[data-bone]{cursor:pointer}.df-busy [data-part="dog"],.df-busy [data-bone]{cursor:default}';
   const defs = el("defs", {}, svg);
@@ -209,13 +253,9 @@ function createEngine(host, callbacks) {
     const g = el("radialGradient", { id, ...attrs }, defs);
     for (const [o, c, a] of stops) el("stop", { offset: o, "stop-color": c, "stop-opacity": a }, g);
   };
-  radial("dfBg", [
-    ["0", "#10211b", 1],
-    ["1", "#070709", 1],
-  ], { cx: "55%", cy: "42%", r: "75%" });
   const moon = THEME_ART[theme]?.moon ?? DEFAULT_MOON;
   radial("dfMoon", moon.stops);
-  defs.insertAdjacentHTML("beforeend", dogDefs(moon.ring));
+  defs.insertAdjacentHTML("beforeend", dogDefs(moon.ring) + boneDefs() + (quality === "rich" ? dogCoatFilter(moon.ring) : ""));
   radial("dfShadow", [
     ["0", "#000", 0.6],
     ["1", "#000", 0],
@@ -223,14 +263,13 @@ function createEngine(host, callbacks) {
   const floorGrad = el("linearGradient", { id: "dfFloor", x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
   el("stop", { offset: 0, "stop-color": MINT, "stop-opacity": 0.09 }, floorGrad);
   el("stop", { offset: 1, "stop-color": MINT, "stop-opacity": 0 }, floorGrad);
-  const dots = el("pattern", { id: "dfDots", width: 26, height: 26, patternUnits: "userSpaceOnUse" }, defs);
-  el("circle", { cx: 1, cy: 1, r: 1.1, fill: "#fff", "fill-opacity": 0.06 }, dots);
 
-  el("rect", { width: "100%", height: "100%", fill: "url(#dfBg)" }, svg);
   const world = el("g", {}, svg);
+  const sky = el("g", {}, skySvg);
+  const near = el("g", {}, nearSvg);
+  const worlds = [sky, world, near];
   const back = el("g", {}, world);
-  el("rect", { x: -2000, y: -1200, width: 4000, height: 1200, fill: "url(#dfDots)" }, back);
-  el("circle", { cx: SPOT_X + 40, cy: -135, r: 215, fill: "url(#dfMoon)" }, back);
+  el("circle", { cx: SPOT_X + 40, cy: -135, r: 215, fill: "url(#dfMoon)" }, sky);
   el("circle", {
     cx: SPOT_X + 40,
     cy: -135,
@@ -240,7 +279,7 @@ function createEngine(host, callbacks) {
     "stroke-opacity": 0.3,
     "stroke-width": 1.5,
     "vector-effect": "non-scaling-stroke",
-  }, back);
+  }, sky);
   el("rect", { x: -2000, y: 0, width: 4000, height: 500, fill: "url(#dfFloor)" }, back);
   el("line", {
     x1: -2000,
@@ -262,12 +301,31 @@ function createEngine(host, callbacks) {
   const fxLayer = el("g", {}, world);
 
   // ---- the dog ---------------------------------------------------------------
+  let speedLinesOff = true;
   const speedLines = [0, 1, 2].map(() =>
     el("line", { stroke: MINT, "stroke-width": 2, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", opacity: 0 }, dogLayer)
   );
-  // Lit in world space, outside the facing flip, so the light stays overhead.
-  const dogLit = el("g", { filter: "url(#dogCoat)" }, dogLayer);
+  // Rich: the coat filter, applied in world space outside the facing flip so
+  // the light stays overhead. Lean: drawn rim-light strokes instead.
+  const dogLit = el("g", quality === "rich" ? { filter: "url(#dogCoat)" } : {}, dogLayer);
   const dogRoot = el("g", { "data-part": "dog" }, dogLit);
+  const rimParts = [];
+  /** A rim-light line along `d`, with a faint sheen band just inside it (lean look). */
+  const rimLight = (d, stroke, parent, { width = 2.3, sheen = 9, sheenDrop = 5.5 } = {}) => {
+    const g = el("g", quality === "rich" ? { display: "none" } : {}, parent);
+    if (sheen) {
+      el("path", { d, transform: `translate(0 ${sheenDrop})`, fill: "none", stroke, "stroke-width": sheen, "stroke-linecap": "round", "stroke-opacity": 0.07 }, g);
+    }
+    el("path", { d, fill: "none", stroke, "stroke-width": width, "stroke-linecap": "round", "stroke-opacity": 0.5 }, g);
+    rimParts.push(g);
+  };
+  /** Swap the rich coat filter for the lean drawn rim light, for good. */
+  const goLean = () => {
+    if (quality === "lean") return;
+    quality = "lean";
+    dogLit.removeAttribute("filter");
+    for (const g of rimParts) g.removeAttribute("display");
+  };
   const hips = el("g", {}, dogRoot);
 
   // Near-side lower legs and paws get a hairline edge so near and far legs
@@ -301,9 +359,11 @@ function createEngine(host, callbacks) {
   el("circle", { cx: 0, cy: 2, r: 36, fill: INK }, hips);
   el("ellipse", { ...CHEST, fill: INK }, hips);
   el("path", { d: "M -4 -33 C 30 -40 62 -43 92 -35 L 97 46 C 76 32 40 26 -4 38 Z", fill: INK }, hips);
+  rimLight(BODY_RIM, "url(#dogRimBody)", hips);
 
   const neck = el("g", {}, hips);
   el("line", { x1: 0, y1: 0, x2: 0, y2: -NECK_LEN + 6, stroke: INK, "stroke-width": 40, "stroke-linecap": "round" }, neck);
+  rimLight("M -18.4 -6 L -18.4 -50", "url(#dogRimNeck)", neck, { width: 2, sheen: 0 });
   // Seasonal neckwear can wrap a band round the neck with this clip: the neck
   // plus the chest (which forms the front of the throat), so its ends always
   // meet the outline.
@@ -352,6 +412,7 @@ function createEngine(host, callbacks) {
   }, head);
   el("path", { d: "M 40 15 C 52 16.5 64 19 75 18", fill: "none", stroke: DETAIL, "stroke-width": 2.2, "stroke-linecap": "round" }, head);
   el("path", { d: "M 40 15 q -3 -0.5 -4.5 -3", fill: "none", stroke: DETAIL, "stroke-width": 2, "stroke-linecap": "round" }, head);
+  rimLight(HEAD_RIM, "url(#dogRimHead)", head, { width: 2.1, sheen: 8, sheenDrop: 4.5 });
   el("ellipse", { cx: 85, cy: -5, rx: 8.5, ry: 7, fill: "#000" }, head);
   el("ellipse", { cx: 83, cy: -8.5, rx: 3.6, ry: 1.8, fill: "#5a5a66" }, head);
   el("path", { d: "M 8 -20 Q 16 -24.5 25 -19.5", fill: "none", stroke: DETAIL, "stroke-width": 2.6, "stroke-linecap": "round" }, head);
@@ -509,23 +570,25 @@ function createEngine(host, callbacks) {
       mouthShown = shown;
       for (const part of mouthParts) part.setAttribute("visibility", shown ? "visible" : "hidden");
     }
-    const ja = dog.jaw * JAW_MAX;
-    jaw.setAttribute("transform", `rotate(${deg(ja).toFixed(2)} ${JAW_HINGE[0]} ${JAW_HINGE[1]})`);
-    const jp = (x, y) => {
-      const [rx, ry] = rot(x - JAW_HINGE[0], y - JAW_HINGE[1], ja);
-      return `${(JAW_HINGE[0] + rx).toFixed(1)} ${(JAW_HINGE[1] + ry).toFixed(1)}`;
-    };
-    // From inside the muzzle to the front of the flews, a curve set back
-    // between the lips (so the opening reads as a notch, not a slab) to the
-    // tip of the lower jaw, then back just under its top edge (the jaw hides
-    // the overlap, so no gap opens at the corner of the mouth).
-    const [tx, ty] = rot(75 - JAW_HINGE[0], 19.5 - JAW_HINGE[1], ja);
-    const curveX = (79 + JAW_HINGE[0] + tx) / 2 - 12 * dog.jaw;
-    const curveY = (17.5 + JAW_HINGE[1] + ty) / 2;
-    mouthInside.setAttribute(
-      "d",
-      `M 18 8 L 82 8 L 79 17.5 Q ${curveX.toFixed(1)} ${curveY.toFixed(1)} ${jp(75, 19.5)} L ${jp(62, 18.2)} L ${jp(46, 16.6)} L ${jp(30, 14.8)} L ${jp(18, 14)} Z`
-    );
+    const ja = shown ? dog.jaw * JAW_MAX : 0;
+    setAttr(jaw, "transform", `rotate(${deg(ja).toFixed(2)} ${JAW_HINGE[0]} ${JAW_HINGE[1]})`);
+    if (shown) {
+      const jp = (x, y) => {
+        const [rx, ry] = rot(x - JAW_HINGE[0], y - JAW_HINGE[1], ja);
+        return `${(JAW_HINGE[0] + rx).toFixed(1)} ${(JAW_HINGE[1] + ry).toFixed(1)}`;
+      };
+      // From inside the muzzle to the front of the flews, a curve set back
+      // between the lips (so the opening reads as a notch, not a slab) to the
+      // tip of the lower jaw, then back just under its top edge (the jaw hides
+      // the overlap, so no gap opens at the corner of the mouth).
+      const [tx, ty] = rot(75 - JAW_HINGE[0], 19.5 - JAW_HINGE[1], ja);
+      const curveX = (79 + JAW_HINGE[0] + tx) / 2 - 12 * dog.jaw;
+      const curveY = (17.5 + JAW_HINGE[1] + ty) / 2;
+      mouthInside.setAttribute(
+        "d",
+        `M 18 8 L 82 8 L 79 17.5 Q ${curveX.toFixed(1)} ${curveY.toFixed(1)} ${jp(75, 19.5)} L ${jp(62, 18.2)} L ${jp(46, 16.6)} L ${jp(30, 14.8)} L ${jp(18, 14)} Z`
+      );
+    }
     ear.setAttribute("transform", tf(-6, -20, dog.ear));
     tailRoot.setAttribute("transform", tf(-30, -14, lerp(P.tail, 0.08, dog.tailStiff)));
     const curl = lerp(P.curl, 0, dog.tailStiff);
@@ -547,6 +610,8 @@ function createEngine(host, callbacks) {
 
     // Speed lines trail the dog while it runs.
     const s = clamp((dog.speed - 150) / 250, 0, 1);
+    if (s === 0 && speedLinesOff) return;
+    speedLinesOff = s === 0;
     speedLines.forEach((line, i) => {
       const y = dog.y - 58 - i * 26;
       const x0 = dog.x - dog.facing * (95 + i * 14);
@@ -575,49 +640,46 @@ function createEngine(host, callbacks) {
     );
   };
 
-  const fitLabel = (text) => {
+  /** Shrink a long name to fit the shaft (measured at full size, so it can re-run once fonts load). */
+  const fitLabel = (label) => {
     try {
-      const len = text.getComputedTextLength();
-      if (len > 92) text.style.fontSize = `${(17 * 92) / len}px`;
+      label.style.fontSize = "17px";
+      const len = label.lastChild.getComputedTextLength();
+      if (len > 92) label.style.fontSize = `${(17 * 92) / len}px`;
     } catch {
       /* not rendered yet */
     }
   };
 
+  /**
+   * Lettering on a bone. `stamped` adds a light copy just below the ink so it
+   * looks pressed in; that doubles the text drawn, so only the bone that gets
+   * presented up close has it (at pile size it's invisible anyway).
+   */
+  const letter = (parent, content, size, y, { stamped = false, ...attrs } = {}) => {
+    const g = el("g", { style: `${FONT}; font-size: ${size}px`, ...attrs }, parent);
+    const layers = stamped ? [[1.1, BONE_EMBOSS, 0.9], [0, BONE_INK, 1]] : [[0, BONE_INK, 1]];
+    for (const [dy, fill, alpha] of layers) {
+      el("text", { x: 0, y: y + dy, "text-anchor": "middle", "dominant-baseline": "central", fill, "fill-opacity": alpha }, g).textContent = content;
+    }
+    return g;
+  };
+
   const boneByNode = new WeakMap();
-  const makeBone = (id, label) => {
+  const makeBone = (id, label, { stamped = false } = {}) => {
     const g = el("g", { "data-bone": "" }, pileLayer);
     const glow = el("path", { d: BONE_PATH, fill: "none", stroke: MINT, "stroke-width": 12, "stroke-linejoin": "round", opacity: 0 }, g);
-    el("path", { d: BONE_PATH, fill: BONE_SHADE, transform: "translate(0 4)" }, g);
-    el("path", { d: BONE_PATH, fill: BONE, stroke: BONE_LINE, "stroke-width": 2, "stroke-linejoin": "round" }, g);
-    el("path", { d: "M -30 -5.5 L 18 -5.5", stroke: "#fffaf0", "stroke-width": 3, "stroke-linecap": "round", opacity: 0.7 }, g);
+    g.insertAdjacentHTML("beforeend", BONE_ART);
     let text = null;
     let mystery = null;
     if (label) {
-      text = el("text", {
-        x: 0,
-        y: 1.5,
-        "text-anchor": "middle",
-        "dominant-baseline": "central",
-        fill: BONE_INK,
-        style: `${FONT}; font-size: 17px`,
-      }, g);
-      text.textContent = label;
+      text = letter(g, label, 17, 1.5, { stamped });
       fitLabel(text);
       document.fonts?.ready.then(() => fitLabel(text));
-      mystery = el("text", {
-        x: 0,
-        y: 2,
-        "text-anchor": "middle",
-        "dominant-baseline": "central",
-        fill: BONE_INK,
-        opacity: 0,
-        style: `${FONT}; font-size: 24px`,
-      }, g);
-      mystery.textContent = "?";
+      mystery = letter(g, "?", 24, 2, { stamped, opacity: 0 });
     } else {
       // Blank bones get a paw print.
-      const paw = el("g", { fill: "#c7b38c" }, g);
+      const paw = el("g", { fill: "#cbb58c", transform: "translate(0 1) scale(0.8)" }, g);
       el("ellipse", { cx: 0, cy: 3, rx: 7, ry: 6 }, paw);
       for (const [x, y] of [[-8, -4], [-3, -8.5], [3, -8.5], [8, -4]]) el("circle", { cx: x, cy: y, r: 3 }, paw);
     }
@@ -760,7 +822,7 @@ function createEngine(host, callbacks) {
     const [lean, amp, speed, phase] = node.getAttribute("data-sway").split(" ").map(Number);
     return { node, lean, amp, speed, phase };
   });
-  const sceneFx = SCENES[theme]?.({ back, propsLayer, fxLayer, moonCenter: [SPOT_X + 40, -135] });
+  const sceneFx = SCENES[theme]?.({ sky, near, propsLayer, moonCenter: [SPOT_X + 40, -135] });
   const themeFx = {
     update(dt, clock) {
       for (const w of swaying) {
@@ -820,13 +882,14 @@ function createEngine(host, callbacks) {
     cam.shake = Math.max(0, cam.shake - dt * 2.5);
     const jx = cam.shake ? (rand(-1, 1) * 9 * cam.shake) / cam.s : 0;
     const jy = cam.shake ? (rand(-1, 1) * 9 * cam.shake) / cam.s : 0;
-    world.setAttribute(
-      "transform",
-      `translate(${(vw / 2 - (cam.cx + jx) * cam.s).toFixed(2)} ${(vh / 2 - (cam.cy + jy) * cam.s).toFixed(2)}) scale(${cam.s.toFixed(4)})`
-    );
+    // Rounded so a settled camera stops changing (moving the world repaints
+    // the whole scene).
+    const view = `translate(${(vw / 2 - (cam.cx + jx) * cam.s).toFixed(1)} ${(vh / 2 - (cam.cy + jy) * cam.s).toFixed(1)}) scale(${cam.s.toFixed(4)})`;
+    for (const w of worlds) setAttr(w, "transform", view);
   };
 
   // ---- timeline primitives -------------------------------------------------------
+  let wake = () => {}; // restarts the frame loop if it's asleep (set up below)
   let mode = "idle"; // idle | busy | present
   let queue = [];
   let step = null;
@@ -1041,7 +1104,7 @@ function createEngine(host, callbacks) {
 
   /** A fresh bone with the winner's name hidden behind a "?". */
   const mysteryBone = () => {
-    const b = makeBone(winnerInfo._id, labelMap.get(winnerInfo._id) ?? winnerInfo.firstName);
+    const b = makeBone(winnerInfo._id, labelMap.get(winnerInfo._id) ?? winnerInfo.firstName, { stamped: true });
     setMystery(b, true);
     b.fromPile = true;
     bones.push(b);
@@ -1323,6 +1386,7 @@ function createEngine(host, callbacks) {
     setDogBehindPile(false);
     queue = [...intro(), ...search(variant), ...outro(variant)];
     step = null;
+    wake();
   };
 
   // ---- petting (between draws) ------------------------------------------------------
@@ -1397,6 +1461,7 @@ function createEngine(host, callbacks) {
     talks = [];
     rebuildBones(pending ?? latest);
     pending = null;
+    wake();
   };
 
   let latest = [];
@@ -1642,30 +1707,61 @@ function createEngine(host, callbacks) {
   const fit = () => {
     vw = host.clientWidth || 1;
     vh = host.clientHeight || 1;
-    svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+    for (const s of [skySvg, svg, nearSvg]) s.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
     cam.ready = false;
   };
   const ro = new ResizeObserver(fit);
   ro.observe(host);
   fit();
 
+  // Sleep while nobody can see the stage (scrolled away, or behind the winner
+  // dialog) — but never mid-draw, so the reveal never waits.
   let raf = 0;
   let last = 0;
+  let onScreen = true;
+  let covered = false;
+  let slowFrames = 0;
+  const asleep = () => mode !== "busy" && (!onScreen || covered);
   const frame = (ts) => {
+    if (asleep()) {
+      raf = 0;
+      last = 0;
+      return;
+    }
     raf = requestAnimationFrame(frame);
+    // A rich scene that keeps missing frames (< ~35 fps for a second or two)
+    // falls back to the lean look.
+    if (quality === "rich" && last) {
+      slowFrames = ts - last > 28 ? slowFrames + 1 : Math.max(0, slowFrames - 1);
+      if (slowFrames > 45) goLean();
+    }
     const dt = last ? Math.min(1 / 30, (ts - last) / 1000) : 1 / 60;
     last = ts;
     update(dt);
   };
-  raf = requestAnimationFrame(frame);
+  wake = () => {
+    if (!raf && !asleep()) raf = requestAnimationFrame(frame);
+  };
+  const io = new IntersectionObserver(([entry]) => {
+    onScreen = entry.isIntersecting;
+    wake();
+  });
+  io.observe(host);
+  wake();
+
+  const setCovered = (value) => {
+    covered = value;
+    wake();
+  };
 
   const dispose = () => {
     cancelAnimationFrame(raf);
     ro.disconnect();
-    svg.remove();
+    io.disconnect();
+    for (const s of [skySvg, svg, nearSvg]) s.remove();
   };
 
-  return { draw, reset, setParticipants, dispose, theme };
+  return { draw, reset, setParticipants, setCovered, dispose, theme, quality: () => quality };
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,11 +1772,11 @@ function createEngine(host, callbacks) {
  * Ambient particles (snow, petals, leaves...) drifting across the stage; about
  * a third go in front of the dog for depth. Returns the per-frame update.
  */
-function drifters({ back, fxLayer }, { count, draw, vy, sway = 12, spin = 0, scale = [0.7, 1.2], front = 0.33, rising = false }) {
+function drifters({ sky, near }, { count, draw, vy, sway = 12, spin = 0, scale = [0.7, 1.2], front = 0.33, rising = false }) {
   const top = -440;
   const bottom = 40;
   const items = Array.from({ length: count }, (_, i) => {
-    const g = el("g", {}, Math.random() < front ? fxLayer : back);
+    const g = el("g", {}, Math.random() < front ? near : sky);
     draw(g, i);
     return {
       g,
@@ -1711,8 +1807,8 @@ function drifters({ back, fxLayer }, { count, draw, vy, sway = 12, spin = 0, sca
 }
 
 /** Fireworks bursting in the sky behind the stage. */
-function fireworks({ back }, colors) {
-  const sparks = Array.from({ length: 96 }, () => ({ node: el("circle", { r: 2.4, opacity: 0 }, back), life: 0 }));
+function fireworks({ sky }, colors) {
+  const sparks = Array.from({ length: 96 }, () => ({ node: el("circle", { r: 2.4, opacity: 0 }, sky), life: 0 }));
   let next = 0.4;
   return (dt) => {
     next -= dt;
@@ -1814,14 +1910,14 @@ const SCENES = {
   summer(ctx) {
     // Sun rays turning slowly around the moon (above the ground only).
     const [cx, cy] = ctx.moonCenter;
-    const rays = el("g", { opacity: 0.32 }, ctx.back);
+    const rays = el("g", { opacity: 0.32 }, ctx.sky);
     const rayGroup = el("g", {}, rays);
     for (let i = 0; i < 18; i++) {
       const a = (i / 18) * Math.PI * 2;
       const pt = (r, da) => `${(cx + Math.cos(a + da) * r).toFixed(1)} ${(cy + Math.sin(a + da) * r).toFixed(1)}`;
       el("path", { d: `M ${pt(228, -0.05)} L ${pt(278, 0)} L ${pt(228, 0.05)} Z`, fill: "#ffd35c" }, rayGroup);
     }
-    const clip = el("clipPath", { id: "dfSky" }, ctx.back);
+    const clip = el("clipPath", { id: "dfSky" }, ctx.sky);
     el("rect", { x: -2000, y: -2000, width: 4000, height: 2000 }, clip);
     rays.setAttribute("clip-path", "url(#dfSky)");
 
@@ -1844,7 +1940,7 @@ const SCENES = {
     const pumpkins = addMarkup(ctx.propsLayer, pumpkinSvg(PILE_X - PILE_HALF - 35, 1.05) + pumpkinSvg(SPOT_X + 245, 0.85));
     const faces = [...pumpkins.querySelectorAll('[data-part="face"]')];
     const bats = [0, 1, 2].map((i) => {
-      const g = addMarkup(ctx.back, batSvg());
+      const g = addMarkup(ctx.sky, batSvg());
       return { g, wings: g.querySelector('[data-part="wings"]'), offset: i * 3.1, speed: 70 + i * 22, y: -250 + i * 38, scale: 0.7 + i * 0.18 };
     });
     return (dt, clock) => {

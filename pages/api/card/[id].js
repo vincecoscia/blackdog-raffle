@@ -4,6 +4,7 @@ import { ImageResponse } from "next/og";
 import connectDB from "@/db/connection";
 import Raffle from "@/db/models/Raffle";
 import { LOGO_VARIANTS, logoSvg } from "@/lib/brand";
+import { BONE_EMBOSS, BONE_INK } from "@/lib/bone";
 import { BONE, CARD, cardScene } from "@/lib/card";
 import { isValidId } from "@/lib/data";
 import { fullName } from "@/lib/format";
@@ -147,7 +148,8 @@ export default async function card(req, res) {
             justifyContent: "center",
             fontFamily: "Bricolage",
             fontSize: labelSize,
-            color: "#2a2320",
+            color: BONE_INK,
+            textShadow: `0 ${(1.1 * BONE.scale).toFixed(1)}px 0 ${BONE_EMBOSS}`, // stamped, as in the live scene
             lineHeight: 1,
           }}
         >
