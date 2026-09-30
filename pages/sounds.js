@@ -5,6 +5,7 @@ import { ArrowLeftIcon, VolumeIcon, VolumeOffIcon } from "@/components/icons";
 import { getSession } from "@/lib/auth";
 import {
   CLIP_NAMES,
+  DEFAULT_SUSPENSE,
   getSuspenseStyle,
   isSoundEnabled,
   isSoundEnabledOnServer,
@@ -38,11 +39,20 @@ const SOURCES = {
   plank: "Kenney Impact Sounds · plank",
   paw: "Kenney Impact Sounds · carpet footstep",
   thud: "Kenney Impact Sounds · soft impact",
+  sleighbells: "BigSoundBank #1124 · Bells of Santa Claus 2",
+  cork: "BigSoundBank #0648 · Champagne cork #2",
+  horn1: "BigSoundBank #1553 · Party horn #1",
+  horn2: "BigSoundBank #1557 · Party horn #5",
+  bird1: "BigSoundBank #3503 · Common blackbird #30",
+  bird2: "BigSoundBank #3496 · Common blackbird #23",
+  thunder: "BigSoundBank #3113 · Thunder #2",
+  leaves: "BigSoundBank #2889 · Feet in leaves #2",
 };
 const sourceOf = (name) => SOURCES[name] ?? SOURCES[name.replace(/\d+$/, "")] ?? SOURCES[name.replace(/Heavy$/, "")] ?? "";
 
 const DOG = CLIP_NAMES.filter((n) => /^(bark|yip|woof|whine|howl|pant)/.test(n));
-const OBJECTS = CLIP_NAMES.filter((n) => !DOG.includes(n));
+const SEASONAL = CLIP_NAMES.filter((n) => /^(sleighbells|cork|horn|bird|thunder|leaves)/.test(n));
+const OBJECTS = CLIP_NAMES.filter((n) => !DOG.includes(n) && !SEASONAL.includes(n));
 
 const SYNTH = [
   { label: "Whoosh (big jump)", play: () => sfx.whoosh(1) },
@@ -63,14 +73,14 @@ const SYNTH = [
 
 const THEME_LABELS = {
   none: "Brand look (fanfare)",
-  halloween: "Halloween · organ + howl",
-  holiday: "Holiday · sleigh bells",
-  newyear: "New Year · party horn",
+  halloween: "Halloween · thunder + haunted organ",
+  holiday: "Holiday · sleigh bells + Jingle Bells",
+  newyear: "New Year · champagne + party horn",
   valentines: "Valentine's · harp",
-  stpatricks: "St. Patrick's · tin whistle",
-  spring: "Spring · birdsong",
-  summer: "Summer · ukulele",
-  autumn: "Autumn · guitar",
+  stpatricks: "St. Patrick's · whistle jig + bodhrán",
+  spring: "Spring · blackbirds",
+  summer: "Summer · Hawaiian ukulele",
+  autumn: "Autumn · leaves, wind + guitar",
 };
 
 function oldDrumroll() {
@@ -79,7 +89,7 @@ function oldDrumroll() {
   setTimeout(() => stop(true), 4000);
 }
 
-const defaultStyle = () => "music";
+const defaultStyle = () => DEFAULT_SUSPENSE;
 
 /**
  * Sound board: every sound in the raffle, playable on its own, plus the whole
@@ -249,6 +259,14 @@ export default function Sounds() {
       <Section title="Bones, paws and landings" hint="Recorded, public domain.">
         <Grid>
           {OBJECTS.map((n) => (
+            <Pad key={n} label={n} sub={sourceOf(n)} onClick={() => play(() => playClip(n, { gain: 0.8 }))} />
+          ))}
+        </Grid>
+      </Section>
+
+      <Section title="Seasonal recordings" hint="Recorded, public domain. Used in the season's music.">
+        <Grid>
+          {SEASONAL.map((n) => (
             <Pad key={n} label={n} sub={sourceOf(n)} onClick={() => play(() => playClip(n, { gain: 0.8 }))} />
           ))}
         </Grid>

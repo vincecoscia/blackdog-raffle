@@ -37,6 +37,7 @@ KENNEY_ZIP = "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677
 #   source "kenney:X"   -> Kenney Impact Sounds, Audio/X.ogg (whole file, trimmed)
 #   where  ("event", t) -> the vocal event nearest t seconds
 #          ("range", a, b) -> exactly a..b seconds
+#          ("range", a, b, fade) -> a..b seconds, fading out over the last `fade` seconds
 CLIPS = [
     # Barks: a small dog, recorded clean (0612 "Small dog barking")
     ("bark1", "bsb:0612", ("event", 9.29)),
@@ -76,7 +77,23 @@ CLIPS = [
     # Landings
     ("thud", "kenney:impactSoft_medium_001", None),
     ("thudHeavy", "kenney:impactSoft_heavy_002", None),
+    # Holiday: sleigh bells (1124 "Bells of Santa Claus 2"), seven steady shakes
+    ("sleighbells", "bsb:1124", ("range", 4.57, 9.22)),
+    # New Year: a champagne cork (0648) and party horns (1553 a short toot, 1557 a longer one)
+    ("cork", "bsb:0648", ("range", 0.2, 0.62)),
+    ("horn1", "bsb:1553", ("event", 0.3)),
+    ("horn2", "bsb:1557", ("event", 0.6)),
+    # Spring: a blackbird (3503 "Common blackbird #30") and a second one answering (3496, #23)
+    ("bird1", "bsb:3503", ("range", 0.5, 3.15)),
+    ("bird2", "bsb:3496", ("range", 0.9, 2.24)),
+    # Halloween: rolling thunder (3113 "Thunder #2")
+    ("thunder", "bsb:3113", ("range", 0.95, 4.4, 0.8)),
+    # Autumn: two steps through dry leaves (2889 "Feet in leaves #2")
+    ("leaves", "bsb:2889", ("range", 1.1, 3.0, 0.4)),
 ]
+
+# Clips whose hiss is softened with a lowpass (Hz).
+LOWPASS = {"leaves": 6500}
 
 
 def fetch(url, dest):
@@ -152,10 +169,15 @@ def build():
         if where is None:
             seg = trim_tail(x)
         elif where[0] == "range":
-            seg = x[int(where[1] * SR) : int(where[2] * SR)]
+            seg = x[int(where[1] * SR) : int(where[2] * SR)].copy()
+            if len(where) > 3:
+                n = int(where[3] * SR)
+                seg[-n:] *= np.linspace(1, 0, n) ** 2
         else:
             s, e = find_event(x, where[1])
             seg = x[max(0, s - int(0.015 * SR)) : min(len(x), e + int(0.06 * SR))]
+        if name in LOWPASS:
+            seg = sosfilt(butter(4, LOWPASS[name], "lowpass", fs=SR, output="sos"), seg)
         seg = clean(seg, dog)
         dur = len(seg) / SR
         clips[name] = [round(pos, 4), round(dur + SLACK, 4)]

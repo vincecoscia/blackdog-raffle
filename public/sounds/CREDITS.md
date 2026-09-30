@@ -15,6 +15,12 @@ The sprite is built by `scripts/build-sounds.py`.
 | whine1–whine3 | #1546 Dogs barking and crying #3 |
 | howl | #2450 Dog singing #1 |
 | pant | #1547 Dogs breathing |
+| sleighbells | #1124 Bells of Santa Claus 2 |
+| cork | #0648 Champagne cork #2 |
+| horn1, horn2 | #1553 Party horn #1, #1557 Party horn #5 |
+| bird1, bird2 | #3503 Common blackbird #30, #3496 Common blackbird #23 |
+| thunder | #3113 Thunder #2 |
+| leaves | #2889 Feet in leaves #2 |
 
 ## Kenney — Impact Sounds (https://kenney.nl/assets/impact-sounds) — CC0
 
@@ -25,5 +31,5 @@ The sprite is built by `scripts/build-sounds.py`.
 | paw1–paw3 | footstep_carpet_000, 001, 003 |
 | thud, thudHeavy | impactSoft_medium_001, impactSoft_heavy_002 |
 
-Everything else (drumroll, crash, whooshes, stings…) is synthesised live in
-`lib/sound.js`.
+Everything else (the suspense music, whooshes, the organ, harp, ukulele,
+glockenspiel…) is synthesised live in `lib/sound.js`.

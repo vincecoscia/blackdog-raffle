@@ -21,11 +21,12 @@ sign-in) and MongoDB via Mongoose.
   with the Web Audio API and can be muted; `prefers-reduced-motion` gets a
   simple name shuffle instead.
 - **Sound** ([lib/sound.js](lib/sound.js)) — real recorded barks, whines, a
-  howl, panting, wooden bone clacks and paw steps (public domain; see
-  [public/sounds/CREDITS.md](public/sounds/CREDITS.md)) in one ~130 KB sprite
+  howl, panting, wooden bone clacks and paw steps, plus seasonal sleigh bells,
+  blackbirds, thunder, dry leaves, a champagne cork and party horns (public domain; see
+  [public/sounds/CREDITS.md](public/sounds/CREDITS.md)) in one ~260 KB sprite
   that preloads in the background, plus synthesised effects (whooshes, skids,
-  sad trombone), suspense while the dog searches (quiet plucked "sneaky" music
-  by default; a soft swell or a soft drumroll can be picked on `/sounds`) and
+  sad trombone), suspense while the dog searches (a soft swell by default;
+  sneaky jazz or a soft drumroll can be picked on `/sounds`) and
   a music sting per season. Between draws the dog can be petted (click it; five quick
   pets for a howl) and bones poked. `/sounds` is an unlisted sound board for
   auditioning everything; `python scripts/build-sounds.py` rebuilds the sprite
