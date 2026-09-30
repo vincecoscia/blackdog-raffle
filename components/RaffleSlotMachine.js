@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "react-toastify";
 import NameShuffle from "./NameShuffle";
@@ -44,7 +45,7 @@ const isFromControl = (e) =>
  * shuffle for users who prefer reduced motion. "Big screen" mode turns the
  * stage into a full-screen presentation for drawing live in a meeting.
  */
-export default function RaffleSlotMachine({ employees, onWinner }) {
+export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = false }) {
   const participants = useMemo(
     () =>
       employees
@@ -127,7 +128,13 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
     setPhase("drawing");
 
     try {
-      ({ data: result.current } = await api("/api/raffle", { method: "POST" }));
+      ({ data: result.current } = await api("/api/raffle", {
+        method: "POST",
+        body: {
+          theme: scene?.theme ?? null, // so the winner card wears the same skin
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+      }));
     } catch (err) {
       toast.error(err.message);
       setPhase("idle");
@@ -321,13 +328,20 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
                 ? "Nobody's in the draw yet — flip teammates in below."
                 : big
                   ? "Press Space to draw · Esc to exit"
-                  : "One bone each. Everyone in the draw has the same shot."}
+                  : (
+                    <>
+                      One bone each, same shot for everyone.{" "}
+                      <Link href="/fairness" className="font-semibold text-accent-300 hover:text-accent-200">
+                        How the draw works
+                      </Link>
+                    </>
+                  )}
             </p>
           </div>
         </div>
       </section>
 
-      <WinnerReveal result={reveal} onClose={closeReveal} onAgain={drawAgain} />
+      <WinnerReveal result={reveal} onClose={closeReveal} onAgain={drawAgain} chatEnabled={chatEnabled} />
     </>
   );
 }

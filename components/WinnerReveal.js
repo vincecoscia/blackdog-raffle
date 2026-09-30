@@ -4,9 +4,11 @@ import {
   DialogPanel,
   DialogTitle,
 } from "@headlessui/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import Avatar from "./Avatar";
-import { SparklesIcon, TrophyIcon } from "./icons";
+import { CheckIcon, DownloadIcon, ShareIcon, SparklesIcon, Spinner, TrophyIcon } from "./icons";
+import { api } from "@/lib/client";
 import { sparkle } from "@/lib/confetti";
 import { formatLongDate, fullName } from "@/lib/format";
 
@@ -34,7 +36,39 @@ function untilt(e) {
 }
 
 /** Full-screen winner announcement, shown once the reel has settled. */
-export default function WinnerReveal({ result, onClose, onAgain }) {
+/** Save the winner card, or post it to Google Chat (once per draw). */
+function ShareActions({ result, chatEnabled }) {
+  const [state, setState] = useState(result.raffle?.sharedAt ? "shared" : "idle"); // idle | sending | shared
+
+  const share = async () => {
+    setState("sending");
+    try {
+      await api(`/api/raffles/${result.raffle._id}/share`, { method: "POST" });
+      setState("shared");
+      toast.success("Posted to Google Chat.");
+    } catch (err) {
+      setState(err.status === 409 ? "shared" : "idle");
+      toast.error(err.message);
+    }
+  };
+
+  return (
+    <div className="mt-5 flex animate-fade-up flex-wrap justify-center gap-2 [animation-delay:.35s]">
+      <a href={`${result.cardUrl}&download=1`} download className="btn btn-ghost text-ink-300">
+        <DownloadIcon size={15} />
+        Save card
+      </a>
+      {chatEnabled && (
+        <button type="button" onClick={share} disabled={state !== "idle"} className="btn btn-ghost text-ink-300">
+          {state === "sending" ? <Spinner size={15} /> : state === "shared" ? <CheckIcon size={15} /> : <ShareIcon size={15} />}
+          {state === "shared" ? "Posted to Google Chat" : "Share to Google Chat"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function WinnerReveal({ result, onClose, onAgain, chatEnabled = false }) {
   const open = Boolean(result);
 
   useEffect(() => {
@@ -116,7 +150,9 @@ export default function WinnerReveal({ result, onClose, onAgain }) {
                   </p>
                 )}
 
-                <div className="mt-8 flex animate-fade-up flex-col-reverse gap-2 [animation-delay:.4s] sm:flex-row sm:justify-center">
+                {result.cardUrl && <ShareActions key={result.raffle._id} result={result} chatEnabled={chatEnabled} />}
+
+                <div className="mt-6 flex animate-fade-up flex-col-reverse gap-2 [animation-delay:.4s] sm:flex-row sm:justify-center">
                   <button
                     type="button"
                     className="btn btn-secondary"

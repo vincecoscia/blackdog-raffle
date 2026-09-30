@@ -6,6 +6,10 @@ const nextConfig = {
     // plain <img> with an initials fallback so any host works.
     remotePatterns: [{ protocol: "https", hostname: "lh3.googleusercontent.com" }],
   },
+  // The winner-card route reads these from disk at runtime.
+  outputFileTracingIncludes: {
+    "/api/card/*": ["./assets/fonts/**", "./public/assets/black_dog_logo.png"],
+  },
 };
 
 module.exports = nextConfig;

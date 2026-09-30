@@ -26,6 +26,16 @@ sign-in) and MongoDB via Mongoose.
   New Year (Jan 1–7), Valentine's (Feb 1–14), St. Patrick's (Mar 10–17),
   spring (Apr–May), summer (Jun–Aug), Halloween (Oct), autumn (Nov) and
   holiday (Dec); the brand look otherwise.
+- **Fairness** — [/fairness](pages/fairness.js) explains the draw in plain
+  language (why repeat winners are normal) and runs 100,000 live test draws
+  through the real pick function. The pick itself lives in
+  [lib/draw.js](lib/draw.js), shared by the draw, the page and the tests.
+- **Winner card** — each draw gets a shareable 1200×630 PNG
+  (`/api/card/:id?sig=…`): the pup holding a bone with the winner's name, in
+  the seasonal skin that was on screen. The URL is public so Google Chat can
+  fetch it, but signed so cards can't be generated for arbitrary draws.
+  "Save card" downloads it; "Share to Google Chat" posts it (once per draw)
+  when `GOOGLE_CHAT_WEBHOOK_URL` is set.
 - **Preview/testing params** — `?theme=<name>|none` forces a skin and
   `?variant=dig|around|fakeout|sniffer|cannonball|zoomies` forces a routine.
   Note that every draw is recorded, so delete test wins from the teammate's
@@ -47,6 +57,20 @@ npm run dev
 
 Open <http://localhost:3000>. `npm run build && npm start` for a production
 build; `npm run lint` runs ESLint.
+
+`npm test` runs the fairness tests ([tests/fairness.test.js](tests/fairness.test.js)):
+millions of draws through the real pick function, checking every entry is
+equally likely, that draws are independent (no streaks, no "avoid the last
+winner"), and that the numbers quoted on the fairness page match simulation.
+Each check uses a 1-in-10,000 significance level, so a rare failure is worth
+re-running once before investigating.
+
+### Google Chat
+
+A space manager creates an incoming webhook (space name → Apps & integrations →
+Webhooks → Add webhook) and the URL goes in `GOOGLE_CHAT_WEBHOOK_URL` (Vercel
+env). Requires a Google Workspace org that allows incoming webhooks. If the
+space rejects card messages, the post falls back to text with the image link.
 
 ## Project layout
 
@@ -75,6 +99,9 @@ All routes need a signed-in session.
 | GET    | `/api/raffle`             | Recent winners (`?limit=`)                   |
 | POST   | `/api/raffle`             | Draw and record a winner                     |
 | DELETE | `/api/raffles/:id`        | Strike a win from the record                 |
+| POST   | `/api/raffles/:id/share`  | Post the winner card to Google Chat (once)   |
+| GET    | `/api/fairness`           | Run test draws (`?n=&draws=`), nothing saved |
+| GET    | `/api/card/:id?sig=`      | Winner card PNG (public, signed)             |
 | GET    | `/api/hello`              | Unauthenticated health check                 |
 
 > The `entries` field on employees is kept as `0`/`1` for compatibility with

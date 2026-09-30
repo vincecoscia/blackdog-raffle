@@ -293,6 +293,16 @@
   --toastify-toast-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
 
+/* Fairness page chart: bars grow up from the baseline on each new run. */
+@keyframes bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
 /* Big-screen draw: the stage is a fixed overlay inside <main>, whose z-10
    stacking context would otherwise leave it under the sticky header. */
 html.big-screen {

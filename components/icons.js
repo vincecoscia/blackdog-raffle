@@ -58,6 +58,25 @@ export const VolumeOffIcon = (p) => (
   </Svg>
 );
 
+export const ShieldIcon = (p) => (
+  <Svg {...p}>
+    <path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+);
+
+export const ShareIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v14" />
+  </Svg>
+);
+
+export const DownloadIcon = (p) => (
+  <Svg {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+  </Svg>
+);
+
 export const ExpandIcon = (p) => (
   <Svg {...p}>
     <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />

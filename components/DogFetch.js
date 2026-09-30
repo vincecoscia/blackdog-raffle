@@ -1,4 +1,16 @@
 import { useEffect, useRef } from "react";
+import {
+  DEFAULT_MOON,
+  HEART,
+  LEAF,
+  THEME_ART,
+  batSvg,
+  isTheme,
+  beachBallSvg,
+  cloverSvg,
+  pumpkinSvg,
+  themeForDate,
+} from "@/lib/themes";
 
 /**
  * The draw, as a 2D cartoon: a black dog sits in the spotlight next to a pile
@@ -28,7 +40,7 @@ export default function DogFetch({ participants, onReady, onLanded, onClack, onS
   useEffect(() => {
     const e = createEngine(host.current, callbacks);
     engine.current = e;
-    callbacks.current.onReady?.({ draw: e.draw, reset: e.reset });
+    callbacks.current.onReady?.({ draw: e.draw, reset: e.reset, theme: e.theme });
     return () => {
       e.dispose();
       engine.current = null;
@@ -46,7 +58,7 @@ export default function DogFetch({ participants, onReady, onLanded, onClack, onS
 // ---------------------------------------------------------------------------
 // Look
 // ---------------------------------------------------------------------------
-const MINT = "#77ddaf";
+const MINT = "#77ddaf"; // brand accent (same as lib/themes MINT)
 const INK = "#0a0a0d"; // the dog
 const INK_FAR = "#202027"; // far-side legs, a touch lighter for depth
 const EAR = "#1c1c23";
@@ -135,25 +147,12 @@ const queryParam = (name) => {
   }
 };
 
-// When each seasonal skin is on (month * 100 + day, inclusive).
-const CALENDAR = [
-  { theme: "newyear", from: 101, to: 107 },
-  { theme: "valentines", from: 201, to: 214 },
-  { theme: "stpatricks", from: 310, to: 317 },
-  { theme: "spring", from: 401, to: 531 },
-  { theme: "summer", from: 601, to: 831 },
-  { theme: "halloween", from: 1001, to: 1031 },
-  { theme: "autumn", from: 1101, to: 1130 },
-  { theme: "holiday", from: 1201, to: 1231 },
-];
-
-/** Seasonal skin by date; `?theme=<name>|none` overrides it (for previews). */
-function pickTheme(now = new Date()) {
+/** Seasonal skin by date (lib/themes CALENDAR); `?theme=<name>|none` overrides it for previews. */
+function pickTheme() {
   const q = queryParam("theme");
   if (q === "none") return null;
-  if (q && THEMES[q]) return q;
-  const md = (now.getMonth() + 1) * 100 + now.getDate();
-  return CALENDAR.find(({ from, to }) => md >= from && md <= to)?.theme ?? null;
+  if (isTheme(q)) return q;
+  return themeForDate(new Date());
 }
 
 /** Two-bone IK in the side plane. Angles: 0 = straight down, positive swings back. */
@@ -192,7 +191,7 @@ function createEngine(host, callbacks) {
     ["0", "#10211b", 1],
     ["1", "#070709", 1],
   ], { cx: "55%", cy: "42%", r: "75%" });
-  const moon = THEMES[theme]?.moon ?? DEFAULT_MOON;
+  const moon = THEME_ART[theme]?.moon ?? DEFAULT_MOON;
   radial("dfMoon", moon.stops);
   radial("dfShadow", [
     ["0", "#000", 0.6],
@@ -240,7 +239,7 @@ function createEngine(host, callbacks) {
   const fxLayer = el("g", {}, world);
 
   // ---- the dog ---------------------------------------------------------------
-  const dogRoot = el("g", {}, dogLayer);
+  const dogRoot = el("g", { "data-part": "dog" }, dogLayer);
   const speedLines = [0, 1, 2].map(() =>
     el("line", { stroke: MINT, "stroke-width": 2, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", opacity: 0 }, dogLayer)
   );
@@ -281,7 +280,7 @@ function createEngine(host, callbacks) {
   el("line", { x1: 0, y1: 0, x2: 0, y2: -NECK_LEN + 6, stroke: INK, "stroke-width": 40, "stroke-linecap": "round" }, neck);
   el("rect", { x: -25, y: -16, width: 50, height: 12, rx: 6, fill: MINT }, neck);
   el("circle", { cx: 6, cy: -2, r: 7, fill: "#c9f4e3", stroke: "#2f7f63", "stroke-width": 1.5 }, neck);
-  const neckSlot = el("g", {}, neck); // seasonal neckwear goes over the collar
+  const neckSlot = el("g", { "data-slot": "neck" }, neck); // seasonal neckwear goes over the collar
   const head = el("g", {}, neck);
   el("circle", { cx: 0, cy: 0, r: 30, fill: INK }, head);
   el("path", { d: "M 4 -18 C 40 -20 68 -12 80 0 C 84 10 72 20 48 20 L 2 22 Z", fill: INK }, head);
@@ -294,7 +293,7 @@ function createEngine(host, callbacks) {
   el("circle", { cx: 3.5, cy: -2, r: 1.4, fill: "#fff" }, eye);
   const ear = el("g", {}, head);
   el("path", { d: "M -4 0 C -22 2 -30 34 -18 54 C -10 60 2 40 8 8 Z", fill: EAR }, ear);
-  const hatSlot = el("g", {}, head);
+  const hatSlot = el("g", { "data-slot": "hat" }, head);
 
   const nearRear = buildLeg(REAR_ATTACH, REAR_LEG, INK, true);
 
@@ -480,7 +479,6 @@ function createEngine(host, callbacks) {
     el("path", { d: "M -30 -5.5 L 18 -5.5", stroke: "#fffaf0", "stroke-width": 3, "stroke-linecap": "round", opacity: 0.7 }, g);
     let text = null;
     let mystery = null;
-    let underline = null;
     if (label) {
       text = el("text", {
         x: 0,
@@ -503,14 +501,13 @@ function createEngine(host, callbacks) {
         style: `${FONT}; font-size: 24px`,
       }, g);
       mystery.textContent = "?";
-      underline = el("line", { x1: 0, x2: 0, y1: 10, y2: 10, stroke: MINT, "stroke-width": 2.5, "stroke-linecap": "round", opacity: 0 }, g);
     } else {
       // Blank bones get a paw print.
       const paw = el("g", { fill: "#c7b38c" }, g);
       el("ellipse", { cx: 0, cy: 3, rx: 7, ry: 6 }, paw);
       for (const [x, y] of [[-8, -4], [-3, -8.5], [3, -8.5], [8, -4]]) el("circle", { cx: x, cy: y, r: 3 }, paw);
     }
-    return { id, g, glow, text, mystery, underline, x: 0, y: -BONE_REST, r: 0, sx: 1, vx: 0, vy: 0, vr: 0, mode: "rest" };
+    return { id, g, glow, text, mystery, x: 0, y: -BONE_REST, r: 0, sx: 1, vx: 0, vy: 0, vr: 0, mode: "rest" };
   };
 
   const placeBone = (b, jx = 0, jy = 0) => b.g.setAttribute("transform", tf(b.x + jx, b.y + jy, b.r, b.sx, 1));
@@ -619,8 +616,21 @@ function createEngine(host, callbacks) {
     callbacks.current.onClack?.(clamp(v, 0.1, 1));
   };
 
-  const themeFx = THEMES[theme]?.build({ back, propsLayer, fxLayer, hatSlot, neckSlot, moonCenter: [SPOT_X + 40, -135] }) ?? {
-    update() {},
+  // Seasonal hat/neckwear (shared with the winner card) + the scene's own effects.
+  hatSlot.innerHTML = THEME_ART[theme]?.hat ?? "";
+  neckSlot.innerHTML = THEME_ART[theme]?.neck ?? "";
+  const swaying = [...dogRoot.querySelectorAll("[data-sway]")].map((node) => {
+    const [lean, amp, speed, phase] = node.getAttribute("data-sway").split(" ").map(Number);
+    return { node, lean, amp, speed, phase };
+  });
+  const sceneFx = SCENES[theme]?.({ back, propsLayer, fxLayer, moonCenter: [SPOT_X + 40, -135] });
+  const themeFx = {
+    update(dt, clock) {
+      for (const w of swaying) {
+        w.node.setAttribute("transform", `rotate(${deg(w.lean + w.amp * Math.sin(clock * w.speed + w.phase)).toFixed(2)})`);
+      }
+      sceneFx?.(dt, clock);
+    },
   };
 
   // ---- camera ------------------------------------------------------------------
@@ -830,7 +840,6 @@ function createEngine(host, callbacks) {
     shuffleLeft = order.length;
     order.forEach((b) => {
       b.glow.setAttribute("opacity", 0);
-      b.underline?.setAttribute("opacity", 0);
       setMystery(b, false);
       b.sx = 1;
       pileLayer.appendChild(b.g);
@@ -1350,12 +1359,6 @@ function createEngine(host, callbacks) {
       presentT += dt;
       dog.tilt = 0.14 * easeInOut(Math.min(1, presentT / 0.6)) + 0.03 * Math.sin(clock * 1.3);
       held.glow.setAttribute("opacity", (0.45 * Math.min(1, presentT / 0.5) + 0.1 * Math.sin(clock * 3)).toFixed(2));
-      if (held.underline) {
-        const w = 42 * easeInOut(clamp((presentT - 0.3) / 0.5, 0, 1));
-        held.underline.setAttribute("opacity", w > 0.5 ? 1 : 0);
-        held.underline.setAttribute("x1", (-w).toFixed(1));
-        held.underline.setAttribute("x2", w.toFixed(1));
-      }
       if (presentT < 2.2 && Math.random() < dt * 9) sparkle(held.x + rand(-80, 80), held.y + rand(-50, 30));
     }
 
@@ -1393,20 +1396,12 @@ function createEngine(host, callbacks) {
     svg.remove();
   };
 
-  return { draw, reset, setParticipants, dispose };
+  return { draw, reset, setParticipants, dispose, theme };
 }
 
 // ---------------------------------------------------------------------------
-// Seasonal skins
+// Seasonal scene effects (hats and neckwear live in lib/themes)
 // ---------------------------------------------------------------------------
-
-const DEFAULT_MOON = { ring: MINT, stops: [["0", "#d8f5e8", 0.26], ["0.72", "#bfeedb", 0.16], ["1", "#9fe9cb", 0.1]] };
-const moonTint = (ring, a, b, c, strength = 1) => ({
-  ring,
-  stops: [["0", a, 0.3 * strength], ["0.72", b, 0.2 * strength], ["1", c, 0.12 * strength]],
-});
-const HEART = "M 0 6 C -12 -3 -10 -14 0 -7 C 10 -14 12 -3 0 6 Z";
-const LEAF = "M 0 -10 C 7 -6 8 4 0 10 C -8 4 -7 -6 0 -10 Z";
 
 /**
  * Ambient particles (snow, petals, leaves...) drifting across the stage; about
@@ -1481,290 +1476,140 @@ function fireworks({ back }, colors) {
   };
 }
 
+/** Add SVG markup to a layer and return the element it created. */
+const addMarkup = (layer, markup) => {
+  const g = el("g", {}, layer);
+  g.innerHTML = markup;
+  return g;
+};
+
 /**
- * Each theme: a moon tint, and a `build` that adds its props (in the dog's
- * head frame via `hatSlot`, over the collar via `neckSlot`, or on stage) and
- * returns a per-frame update. Dates live in CALENDAR.
+ * Per theme: builds the scene's animated extras (particles, props) and returns
+ * their per-frame update. Dates live in lib/themes CALENDAR.
  */
-const THEMES = {
-  newyear: {
-    moon: moonTint("#ffd76a", "#fff1c4", "#ffd96b", "#f7c948"),
-    build(ctx) {
-      // Striped party hat.
-      const hat = el("g", { transform: "translate(-2 -26) rotate(-18)" }, ctx.hatSlot);
-      el("path", { d: "M -18 0 L 18 0 L 0 -58 Z", fill: MINT }, hat);
-      const w = (y) => 18 * (1 + y / 58);
-      for (const [y0, y1] of [[-8, -16], [-24, -32], [-40, -48]]) {
-        el("path", { d: `M ${-w(y0)} ${y0} L ${w(y0)} ${y0} L ${w(y1)} ${y1} L ${-w(y1)} ${y1} Z`, fill: "#f7c948" }, hat);
+const SCENES = {
+  newyear(ctx) {
+    const fw = fireworks(ctx, [MINT, "#f7c948", "#ffffff", "#ff8fb3", "#a78bfa"]);
+    const glitter = drifters(ctx, {
+      count: 36,
+      vy: [15, 35],
+      sway: 10,
+      spin: 3,
+      scale: [0.6, 1.1],
+      draw: (g, i) => el("rect", { x: -2.5, y: -1.5, width: 5, height: 3, fill: ["#f7c948", MINT, "#ffffff"][i % 3], opacity: 0.8 }, g),
+    });
+    return (dt, clock) => {
+      fw(dt);
+      glitter(dt, clock);
+    };
+  },
+
+  valentines(ctx) {
+    return drifters(ctx, {
+      count: 18,
+      rising: true,
+      vy: [18, 38],
+      sway: 16,
+      spin: 0.4,
+      scale: [0.6, 1.3],
+      front: 0.25,
+      draw: (g, i) => el("path", { d: HEART, fill: i % 2 ? "#ff5d8f" : "#ff9fc0", opacity: 0.55 }, g),
+    });
+  },
+
+  stpatricks(ctx) {
+    return drifters(ctx, {
+      count: 22,
+      vy: [16, 34],
+      sway: 14,
+      spin: 1.2,
+      scale: [0.6, 1.1],
+      draw: (g) => {
+        g.innerHTML = cloverSvg();
+        g.setAttribute("opacity", 0.8);
+      },
+    });
+  },
+
+  spring(ctx) {
+    return drifters(ctx, {
+      count: 34,
+      vy: [18, 36],
+      sway: 26,
+      spin: 2.2,
+      scale: [0.7, 1.3],
+      draw: (g, i) => el("ellipse", { cx: 0, cy: 0, rx: 5, ry: 3, fill: i % 3 ? "#ffc4dc" : "#fff0f6", opacity: 0.8 }, g),
+    });
+  },
+
+  summer(ctx) {
+    // Sun rays turning slowly around the moon (above the ground only).
+    const [cx, cy] = ctx.moonCenter;
+    const rays = el("g", { opacity: 0.32 }, ctx.back);
+    const rayGroup = el("g", {}, rays);
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * Math.PI * 2;
+      const pt = (r, da) => `${(cx + Math.cos(a + da) * r).toFixed(1)} ${(cy + Math.sin(a + da) * r).toFixed(1)}`;
+      el("path", { d: `M ${pt(228, -0.05)} L ${pt(278, 0)} L ${pt(228, 0.05)} Z`, fill: "#ffd35c" }, rayGroup);
+    }
+    const clip = el("clipPath", { id: "dfSky" }, ctx.back);
+    el("rect", { x: -2000, y: -2000, width: 4000, height: 2000 }, clip);
+    rays.setAttribute("clip-path", "url(#dfSky)");
+
+    // Beach ball bouncing by the spotlight.
+    const bx = SPOT_X + 255;
+    const shadow = el("ellipse", { cx: 0, cy: 3, rx: 26, ry: 6, fill: "url(#dfShadow)" }, ctx.propsLayer);
+    const ball = addMarkup(ctx.propsLayer, beachBallSvg());
+    const spinner = ball.querySelector('[data-part="spin"]');
+    return (dt, clock) => {
+      rayGroup.setAttribute("transform", `rotate(${((clock * 4) % 360).toFixed(2)} ${cx} ${cy})`);
+      const h = Math.abs(Math.sin(clock * 2.4)) * 30;
+      ball.setAttribute("transform", `translate(${bx} ${(-24 - h).toFixed(1)})`);
+      spinner.setAttribute("transform", `rotate(${((clock * 60) % 360).toFixed(1)})`);
+      shadow.setAttribute("transform", `translate(${bx} 0) scale(${(1 - h / 60).toFixed(2)} 1)`);
+    };
+  },
+
+  halloween(ctx) {
+    // Jack-o'-lanterns either side of the stage, and bats across the moon.
+    const pumpkins = addMarkup(ctx.propsLayer, pumpkinSvg(PILE_X - PILE_HALF - 35, 1.05) + pumpkinSvg(SPOT_X + 245, 0.85));
+    const faces = [...pumpkins.querySelectorAll('[data-part="face"]')];
+    const bats = [0, 1, 2].map((i) => {
+      const g = addMarkup(ctx.back, batSvg());
+      return { g, wings: g.querySelector('[data-part="wings"]'), offset: i * 3.1, speed: 70 + i * 22, y: -250 + i * 38, scale: 0.7 + i * 0.18 };
+    });
+    return (dt, clock) => {
+      faces.forEach((f, i) => f.setAttribute("opacity", (0.78 + 0.22 * Math.sin(clock * 9 + i * 2) * Math.sin(clock * 3.7 + i)).toFixed(2)));
+      for (const b of bats) {
+        const x = ((clock * b.speed + b.offset * 400) % 1300) - 750;
+        const y = b.y + 22 * Math.sin(clock * 1.6 + b.offset);
+        b.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${b.scale})`);
+        b.wings.setAttribute("transform", `scale(1 ${Math.cos(clock * 16 + b.offset).toFixed(2)})`);
       }
-      el("circle", { cx: 0, cy: -60, r: 6.5, fill: "#fff3c4" }, hat);
-      const fw = fireworks(ctx, [MINT, "#f7c948", "#ffffff", "#ff8fb3", "#a78bfa"]);
-      const glitter = drifters(ctx, {
-        count: 36,
-        vy: [15, 35],
-        sway: 10,
-        spin: 3,
-        scale: [0.6, 1.1],
-        draw: (g, i) => el("rect", { x: -2.5, y: -1.5, width: 5, height: 3, fill: ["#f7c948", MINT, "#ffffff"][i % 3], opacity: 0.8 }, g),
-      });
-      return {
-        update(dt, clock) {
-          fw(dt);
-          glitter(dt, clock);
-        },
-      };
-    },
+    };
   },
 
-  valentines: {
-    moon: moonTint("#ff9fc0", "#ffe0ec", "#ffb3cd", "#ff8fb3"),
-    build(ctx) {
-      // Heart boppers on springs.
-      const band = el("g", { transform: "translate(-4 -22)" }, ctx.hatSlot);
-      el("path", { d: "M -26 6 C -22 -14 14 -16 22 2", fill: "none", stroke: "#e23e6f", "stroke-width": 4, "stroke-linecap": "round" }, band);
-      const boppers = [
-        [-12, -8, -0.25],
-        [8, -10, 0.2],
-      ].map(([x, y, lean]) => {
-        const g = el("g", { transform: `translate(${x} ${y})` }, band);
-        const arm = el("g", {}, g);
-        el("path", { d: "M 0 0 l -3 -6 l 6 -6 l -6 -6 l 6 -6 l -3 -6", fill: "none", stroke: "#2a2a31", "stroke-width": 1.8, "stroke-linejoin": "round" }, arm);
-        el("path", { d: HEART, fill: "#ff5d8f", transform: "translate(0 -38) scale(1.1)" }, arm);
-        return { arm, lean };
-      });
-      const hearts = drifters(ctx, {
-        count: 18,
-        rising: true,
-        vy: [18, 38],
-        sway: 16,
-        spin: 0.4,
-        scale: [0.6, 1.3],
-        front: 0.25,
-        draw: (g, i) => el("path", { d: HEART, fill: i % 2 ? "#ff5d8f" : "#ff9fc0", opacity: 0.55 }, g),
-      });
-      return {
-        update(dt, clock) {
-          boppers.forEach((b, i) => b.arm.setAttribute("transform", `rotate(${deg(b.lean + 0.22 * Math.sin(clock * 5 + i * 1.7)).toFixed(1)})`));
-          hearts(dt, clock);
-        },
-      };
-    },
+  autumn(ctx) {
+    return drifters(ctx, {
+      count: 28,
+      vy: [24, 46],
+      sway: 30,
+      spin: 2.6,
+      scale: [0.8, 1.4],
+      draw: (g, i) => {
+        el("path", { d: LEAF, fill: ["#d9531e", "#e8a33d", "#b8421d", "#f0c05a"][i % 4], opacity: 0.85 }, g);
+        el("line", { x1: 0, y1: -8, x2: 0, y2: 12, stroke: "#7a3413", "stroke-width": 1.2, opacity: 0.8 }, g);
+      },
+    });
   },
 
-  stpatricks: {
-    moon: moonTint("#9be07f", "#e3ffd9", "#b8f0a0", "#7fd66a"),
-    build(ctx) {
-      // Green top hat with a gold buckle.
-      const hat = el("g", { transform: "translate(-4 -26) rotate(-12)" }, ctx.hatSlot);
-      el("ellipse", { cx: 0, cy: 0, rx: 32, ry: 6.5, fill: "#17613a" }, hat);
-      el("path", { d: "M -17 -1 L -21 -40 L 21 -40 L 17 -1 Z", fill: "#1f7a45" }, hat);
-      el("ellipse", { cx: 0, cy: -40, rx: 21, ry: 5, fill: "#248a4f" }, hat);
-      el("rect", { x: -18.5, y: -12, width: 37, height: 8, fill: "#111" }, hat);
-      el("rect", { x: -6, y: -14, width: 12, height: 12, rx: 1.5, fill: "none", stroke: "#f7c948", "stroke-width": 2.5 }, hat);
-      const clovers = drifters(ctx, {
-        count: 22,
-        vy: [16, 34],
-        sway: 14,
-        spin: 1.2,
-        scale: [0.6, 1.1],
-        draw: (g) => {
-          for (const a of [0, 120, 240]) el("path", { d: HEART, fill: "#3fae61", opacity: 0.8, transform: `rotate(${a}) translate(0 -9)` }, g);
-          el("path", { d: "M 0 2 Q 3 10 8 14", stroke: "#2f8a4c", "stroke-width": 2, fill: "none" }, g);
-        },
-      });
-      return { update: (dt, clock) => clovers(dt, clock) };
-    },
-  },
-
-  spring: {
-    moon: moonTint("#e9c2ff", "#fbe8ff", "#f2d0ff", "#e2b4f5"),
-    build(ctx) {
-      // Bunny-ears headband.
-      const band = el("g", { transform: "translate(-6 -24)" }, ctx.hatSlot);
-      el("path", { d: "M -24 8 C -20 -8 16 -10 22 6", fill: "none", stroke: "#f0b8d0", "stroke-width": 4, "stroke-linecap": "round" }, band);
-      const ears = [
-        [-10, -0.28],
-        [8, 0.18],
-      ].map(([x, lean]) => {
-        const g = el("g", { transform: `translate(${x} -4)` }, band);
-        const inner = el("g", {}, g);
-        el("ellipse", { cx: 0, cy: -30, rx: 9, ry: 30, fill: "#fafafa" }, inner);
-        el("ellipse", { cx: 0, cy: -30, rx: 4.5, ry: 21, fill: "#ffb7cf" }, inner);
-        return { inner, lean };
-      });
-      const petals = drifters(ctx, {
-        count: 34,
-        vy: [18, 36],
-        sway: 26,
-        spin: 2.2,
-        scale: [0.7, 1.3],
-        draw: (g, i) => el("ellipse", { cx: 0, cy: 0, rx: 5, ry: 3, fill: i % 3 ? "#ffc4dc" : "#fff0f6", opacity: 0.8 }, g),
-      });
-      return {
-        update(dt, clock) {
-          ears.forEach((e, i) => e.inner.setAttribute("transform", `rotate(${deg(e.lean + 0.05 * Math.sin(clock * 2 + i)).toFixed(1)})`));
-          petals(dt, clock);
-        },
-      };
-    },
-  },
-
-  summer: {
-    moon: moonTint("#ffd35c", "#fff6c8", "#ffe27a", "#ffc94a", 1.5), // it's a sun now
-    build(ctx) {
-      // Sunglasses (the far lens is hidden in profile).
-      const shades = el("g", {}, ctx.hatSlot);
-      el("line", { x1: 4, y1: -15, x2: -20, y2: -18, stroke: MINT, "stroke-width": 3, "stroke-linecap": "round" }, shades);
-      el("path", { d: "M 2 -21 L 36 -21 L 34 -8 Q 30 1 19 1 Q 6 1 3 -8 Z", fill: "#15151c", stroke: MINT, "stroke-width": 2.2, "stroke-linejoin": "round" }, shades);
-      el("path", { d: "M 9 -15 L 20 -17", stroke: "#ffffff", "stroke-width": 2.5, "stroke-linecap": "round", opacity: 0.8 }, shades);
-      el("path", { d: "M 26 -16 L 29 -16.5", stroke: "#ffffff", "stroke-width": 2.5, "stroke-linecap": "round", opacity: 0.6 }, shades);
-
-      // Sun rays turning slowly around the moon (upper half only, above the ground).
-      const [cx, cy] = ctx.moonCenter;
-      const rays = el("g", { opacity: 0.32 }, ctx.back);
-      const rayGroup = el("g", {}, rays);
-      for (let i = 0; i < 18; i++) {
-        const a = (i / 18) * Math.PI * 2;
-        const pt = (r, da) => `${(cx + Math.cos(a + da) * r).toFixed(1)} ${(cy + Math.sin(a + da) * r).toFixed(1)}`;
-        el("path", { d: `M ${pt(228, -0.05)} L ${pt(278, 0)} L ${pt(228, 0.05)} Z`, fill: "#ffd35c" }, rayGroup);
-      }
-      const clip = el("clipPath", { id: "dfSky" }, ctx.back);
-      el("rect", { x: -2000, y: -2000, width: 4000, height: 2000 }, clip);
-      rays.setAttribute("clip-path", "url(#dfSky)");
-
-      // Beach ball bouncing by the spotlight.
-      const bx = SPOT_X + 255;
-      const shadow = el("ellipse", { cx: 0, cy: 3, rx: 26, ry: 6, fill: "url(#dfShadow)" }, ctx.propsLayer);
-      const ball = el("g", {}, ctx.propsLayer);
-      const spinner = el("g", {}, ball);
-      el("circle", { cx: 0, cy: 0, r: 24, fill: "#fdfdfd" }, spinner);
-      el("path", { d: "M 0 -24 A 24 24 0 0 1 20.8 12 L 0 0 Z", fill: "#ff5d5d" }, spinner);
-      el("path", { d: "M 20.8 12 A 24 24 0 0 1 -20.8 12 L 0 0 Z", fill: "#4fb8ff" }, spinner);
-      el("path", { d: "M -20.8 12 A 24 24 0 0 1 0 -24 L 0 0 Z", fill: "#ffd35c" }, spinner);
-      el("circle", { cx: 0, cy: 0, r: 5, fill: "#fdfdfd" }, spinner);
-      el("circle", { cx: 0, cy: 0, r: 24, fill: "none", stroke: "#1d1914", "stroke-width": 1.5 }, ball);
-      el("ellipse", { cx: -8, cy: -10, rx: 6, ry: 3.5, fill: "#fff", opacity: 0.7, transform: "rotate(-35 -8 -10)" }, ball);
-      return {
-        update(dt, clock) {
-          rayGroup.setAttribute("transform", `rotate(${((clock * 4) % 360).toFixed(2)} ${cx} ${cy})`);
-          const h = Math.abs(Math.sin(clock * 2.4)) * 30;
-          ball.setAttribute("transform", `translate(${bx} ${(-24 - h).toFixed(1)})`);
-          spinner.setAttribute("transform", `rotate(${((clock * 60) % 360).toFixed(1)})`);
-          shadow.setAttribute("transform", `translate(${bx} 0) scale(${(1 - h / 60).toFixed(2)} 1)`);
-        },
-      };
-    },
-  },
-
-  halloween: {
-    moon: moonTint("#ffb35c", "#ffe2b0", "#ffc274", "#f59e3b", 1.1),
-    build(ctx) {
-      // Witch hat with a mint band.
-      const hat = el("g", { transform: "translate(-4 -24) rotate(-14)" }, ctx.hatSlot);
-      el("ellipse", { cx: 0, cy: 0, rx: 42, ry: 8, fill: "#1d1330" }, hat);
-      el("path", {
-        d: "M -24 -2 L 20 -2 C 12 -30 6 -56 -2 -76 C -6 -86 -18 -92 -30 -84 C -20 -80 -14 -72 -12 -62 C -16 -40 -20 -20 -24 -2 Z",
-        fill: "#1d1330",
-      }, hat);
-      el("path", { d: "M -22 -9 L 18 -9 L 15 -19 L -20 -19 Z", fill: MINT }, hat);
-
-      // Jack-o'-lanterns either side of the stage.
-      const faces = [];
-      const pumpkin = (x, sc) => {
-        const g = el("g", { transform: `translate(${x} 0) scale(${sc})` }, ctx.propsLayer);
-        el("ellipse", { cx: 0, cy: 3, rx: 46, ry: 8, fill: "url(#dfShadow)" }, g);
-        el("ellipse", { cx: 0, cy: -30, rx: 44, ry: 31, fill: "#d9701a" }, g);
-        el("ellipse", { cx: -17, cy: -30, rx: 21, ry: 30, fill: "#ef8a2e" }, g);
-        el("ellipse", { cx: 17, cy: -30, rx: 21, ry: 30, fill: "#ef8a2e" }, g);
-        el("ellipse", { cx: 0, cy: -30, rx: 15, ry: 31, fill: "#f79a3e" }, g);
-        el("path", { d: "M 0 -60 C 2 -70 8 -74 13 -72", fill: "none", stroke: "#3f7d5a", "stroke-width": 7, "stroke-linecap": "round" }, g);
-        const face = el("g", { fill: "#ffd45e" }, g);
-        el("path", { d: "M -24 -36 L -13 -48 L -7 -34 Z" }, face);
-        el("path", { d: "M 24 -36 L 13 -48 L 7 -34 Z" }, face);
-        el("path", { d: "M -25 -22 Q 0 -4 25 -22 L 17 -19 L 12 -13 L 6 -19 L 0 -12 L -6 -19 L -12 -13 L -17 -19 Z" }, face);
-        faces.push(face);
-      };
-      pumpkin(PILE_X - PILE_HALF - 35, 1.05);
-      pumpkin(SPOT_X + 245, 0.85);
-
-      // Bats flapping across the moon.
-      const bats = [0, 1, 2].map((i) => {
-        const g = el("g", {}, ctx.back);
-        const wings = el("g", {}, g);
-        const wing = "M -4 -2 C -14 -14 -30 -12 -40 -4 C -33 -2 -31 4 -27 7 C -23 1 -17 3 -13 7 C -10 1 -6 1 -3 3 Z";
-        el("path", { d: wing, fill: "#0b0b0f" }, wings);
-        el("path", { d: wing, fill: "#0b0b0f", transform: "scale(-1 1)" }, wings);
-        el("ellipse", { cx: 0, cy: 0, rx: 6, ry: 9, fill: "#0b0b0f" }, g);
-        el("path", { d: "M -4 -7 L -3 -14 L 0 -8 L 3 -14 L 4 -7 Z", fill: "#0b0b0f" }, g);
-        return { g, wings, offset: i * 3.1, speed: 70 + i * 22, y: -250 + i * 38, scale: 0.7 + i * 0.18 };
-      });
-
-      return {
-        update(dt, clock) {
-          faces.forEach((f, i) => f.setAttribute("opacity", (0.78 + 0.22 * Math.sin(clock * 9 + i * 2) * Math.sin(clock * 3.7 + i)).toFixed(2)));
-          for (const b of bats) {
-            const x = ((clock * b.speed + b.offset * 400) % 1300) - 750;
-            const y = b.y + 22 * Math.sin(clock * 1.6 + b.offset);
-            b.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${b.scale})`);
-            b.wings.setAttribute("transform", `scale(1 ${Math.cos(clock * 16 + b.offset).toFixed(2)})`);
-          }
-        },
-      };
-    },
-  },
-
-  autumn: {
-    moon: moonTint("#f0a45c", "#ffe6c7", "#ffc58a", "#e8924a"),
-    build(ctx) {
-      // Knit scarf over the collar, tail fluttering.
-      const scarf = el("g", {}, ctx.neckSlot);
-      el("rect", { x: -28, y: -21, width: 56, height: 19, rx: 8, fill: "#c8492a" }, scarf);
-      el("rect", { x: -28, y: -15, width: 56, height: 3.5, fill: "#f2b544" }, scarf);
-      el("rect", { x: -28, y: -8, width: 56, height: 3.5, fill: "#f2b544" }, scarf);
-      const tail = el("g", { transform: "translate(16 -6)" }, scarf);
-      const flap = el("g", {}, tail);
-      el("path", { d: "M -6 0 L 6 0 L 9 34 L -3 34 Z", fill: "#c8492a" }, flap);
-      el("rect", { x: -4.5, y: 12, width: 12, height: 3.5, fill: "#f2b544", transform: "rotate(5)" }, flap);
-      for (let i = 0; i < 4; i++) el("line", { x1: -2 + i * 3.2, y1: 34, x2: -2.5 + i * 3.2, y2: 40, stroke: "#c8492a", "stroke-width": 2 }, flap);
-      const leaves = drifters(ctx, {
-        count: 28,
-        vy: [24, 46],
-        sway: 30,
-        spin: 2.6,
-        scale: [0.8, 1.4],
-        draw: (g, i) => {
-          el("path", { d: LEAF, fill: ["#d9531e", "#e8a33d", "#b8421d", "#f0c05a"][i % 4], opacity: 0.85 }, g);
-          el("line", { x1: 0, y1: -8, x2: 0, y2: 12, stroke: "#7a3413", "stroke-width": 1.2, opacity: 0.8 }, g);
-        },
-      });
-      return {
-        update(dt, clock) {
-          flap.setAttribute("transform", `rotate(${deg(0.12 * Math.sin(clock * 3)).toFixed(1)})`);
-          leaves(dt, clock);
-        },
-      };
-    },
-  },
-
-  holiday: {
-    moon: moonTint("#cfe3ff", "#f2f8ff", "#d9e9ff", "#bcd6ff"),
-    build(ctx) {
-      // Santa hat flopping back, with a pom-pom.
-      const hat = el("g", { transform: "translate(-2 -24) rotate(-8)" }, ctx.hatSlot);
-      el("path", {
-        d: "M 26 -4 C 22 -36 0 -60 -24 -62 C -40 -62 -50 -52 -56 -38 C -46 -44 -34 -44 -28 -38 C -24 -26 -26 -12 -28 -4 Z",
-        fill: "#d63a3a",
-      }, hat);
-      el("rect", { x: -32, y: -12, width: 62, height: 15, rx: 7.5, fill: "#f6f6f4" }, hat);
-      el("circle", { cx: -57, cy: -37, r: 10, fill: "#f6f6f4" }, hat);
-      const snow = drifters(ctx, {
-        count: 70,
-        vy: [22, 58],
-        sway: 14,
-        scale: [0.5, 1.2],
-        draw: (g) => el("circle", { r: rand(1.6, 3.2), fill: "#fff", opacity: rand(0.35, 0.85) }, g),
-      });
-      return { update: (dt, clock) => snow(dt, clock) };
-    },
+  holiday(ctx) {
+    return drifters(ctx, {
+      count: 70,
+      vy: [22, 58],
+      sway: 14,
+      scale: [0.5, 1.2],
+      draw: (g) => el("circle", { r: rand(1.6, 3.2), fill: "#fff", opacity: rand(0.35, 0.85) }, g),
+    });
   },
 };

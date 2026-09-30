@@ -1,3 +1,4 @@
+import Link from "next/link";
 import Nav from "./Nav";
 import RouteProgress from "./RouteProgress";
 
@@ -10,7 +11,10 @@ export default function Layout({ children }) {
       <Nav />
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 px-4 pt-8 pb-20 sm:px-6">{children}</main>
       <footer className="relative z-10 mx-auto w-full max-w-6xl px-4 pb-6 text-center text-xs text-ink-500 sm:px-6">
-        Made with ♥ for the Blackdog team
+        Made with ♥ for the Blackdog team ·{" "}
+        <Link href="/fairness" className="hover:text-ink-300">
+          How the draw works
+        </Link>
       </footer>
     </div>
   );
