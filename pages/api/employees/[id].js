@@ -1,61 +1,48 @@
-import connectDB from "../../../db/connection";
-import Employee from "../../../db/models/Employee";
-import Raffle from "../../../db/models/Raffle";
+import connectDB from "@/db/connection";
+import Employee from "@/db/models/Employee";
+import Raffle from "@/db/models/Raffle";
+import { route, ApiError } from "@/lib/api";
+import { getEmployeeWithWins, isValidId, parseInDraw, pickEditable, serialize } from "@/lib/data";
 
-export default async function getEmployee(req, res) {
-  await connectDB().catch((err) => {
-    console.log(err);
-  });
+export default route({
+  // GET /api/employees/:id — profile plus win history.
+  async GET(req, res) {
+    const result = await getEmployeeWithWins(req.query.id);
+    if (!result) throw new ApiError(404, "Employee not found.");
+    res.status(200).json({ success: true, data: result.employee, raffles: result.wins });
+  },
 
-  const { method } = req;
+  // PUT /api/employees/:id — edit details, or flip them in/out of the draw
+  // with { inDraw: true|false }.
+  async PUT(req, res) {
+    const { id } = req.query;
+    if (!isValidId(id)) throw new ApiError(404, "Employee not found.");
 
-  switch (method) {
-    case "GET":
-      try {
-        const employee = await Employee.findById(req.query.id);
-        // Find all raffles the employee has won
-        const raffles = await Raffle.find({ winner: employee._id });
-        // If there are no raffles, return an empty array
-        if (!raffles) {
-          return res.status(200).json({ success: true, data: employee, raffles: [] });
-        }
-        res.status(200).json({ success: true, data: employee, raffles });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    case "PUT":
-      try {
-        const employee = await Employee.findByIdAndUpdate(
-          req.query.id,
-          req.body,
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
-        if (!employee) {
-          return res.status(400).json({ success: false });
-        }
-        res.status(200).json({ success: true, data: employee });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    case "DELETE":
-      try {
-        const deletedEmployee = await Employee.deleteOne({ _id: req.query.id });
-        if (!deletedEmployee) {
-          return res.status(400).json({ success: false });
-        }
-        res.status(200).json({ success: true, data: {} });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    default:
-      res.setHeader("Allow", ["GET", "PUT"]);
-      res.status(400).json({ success: false });
-      break;
-  }
-}
+    const fields = pickEditable(req.body);
+    if ("inDraw" in req.body) {
+      const entries = parseInDraw(req.body.inDraw);
+      if (entries === null) throw new ApiError(400, "inDraw must be true or false.");
+      fields.entries = entries;
+    }
+
+    await connectDB();
+    const employee = await Employee.findByIdAndUpdate(id, fields, {
+      new: true,
+      runValidators: true,
+    }).lean();
+    if (!employee) throw new ApiError(404, "Employee not found.");
+    res.status(200).json({ success: true, data: serialize(employee) });
+  },
+
+  // DELETE /api/employees/:id — remove the teammate and their win history.
+  async DELETE(req, res) {
+    const { id } = req.query;
+    if (!isValidId(id)) throw new ApiError(404, "Employee not found.");
+
+    await connectDB();
+    const deleted = await Employee.findByIdAndDelete(id).lean();
+    if (!deleted) throw new ApiError(404, "Employee not found.");
+    await Raffle.deleteMany({ winner: id });
+    res.status(200).json({ success: true, data: {} });
+  },
+});

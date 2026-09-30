@@ -1,299 +1,270 @@
-import { API_URL } from "../../config/index";
-import Layout from "../../components/Layout";
-import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { useState } from "react";
 import { toast } from "react-toastify";
-import { useRouter } from "next/router";
-import Modal from "../../components/Modal";
-import RaffleModal from "../../components/RaffleModal";
+import Avatar from "@/components/Avatar";
+import DrawToggle from "@/components/DrawToggle";
+import Field from "@/components/Field";
+import Header from "@/components/Header";
+import ConfirmDialog from "@/components/Modal";
+import { ArrowLeftIcon, PencilIcon, TrashIcon, TrophyIcon, XIcon } from "@/components/icons";
+import { getSession } from "@/lib/auth";
+import { api } from "@/lib/client";
+import { getEmployeeWithWins, getEmployees } from "@/lib/data";
+import { formatLongDate, fullName, plural, relativeDate } from "@/lib/format";
 
-export default function EmployeePage(props) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [raffleIsOpen, setRaffleIsOpen] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const employee = props.employee.data;
-  const raffles = props.employee.raffles;
+export default function EmployeePage({ employee: initial, wins: initialWins, poolSize: initialPool }) {
+  const router = useRouter();
+  const [employee, setEmployee] = useState(initial);
+  const [wins, setWins] = useState(initialWins);
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [winToDelete, setWinToDelete] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [savingDraw, setSavingDraw] = useState(false);
+
+  const inDraw = employee.entries > 0;
+  // How many are in the hat, kept in step with this teammate's own toggle.
+  const poolSize = initialPool - (initial.entries > 0 ? 1 : 0) + (inDraw ? 1 : 0);
+  const name = fullName(employee);
+
+  const toggleDraw = async (next) => {
+    const previous = employee.entries;
+    setEmployee((e) => ({ ...e, entries: next ? 1 : 0 }));
+    setSavingDraw(true);
+    try {
+      await api(`/api/employees/${employee._id}`, { method: "PUT", body: { inDraw: next } });
+    } catch (err) {
+      setEmployee((e) => ({ ...e, entries: previous }));
+      toast.error(err.message);
+    } finally {
+      setSavingDraw(false);
+    }
+  };
+
+  const saveDetails = async (values) => {
+    setBusy(true);
+    try {
+      const { data } = await api(`/api/employees/${employee._id}`, { method: "PUT", body: values });
+      setEmployee(data);
+      setEditing(false);
+      toast.success("Profile updated.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteEmployee = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/employees/${employee._id}`, { method: "DELETE" });
+      toast.success(`${name} was removed.`);
+      router.push("/");
+    } catch (err) {
+      toast.error(err.message);
+      setBusy(false);
+    }
+  };
+
+  const deleteWin = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/raffles/${winToDelete._id}`, { method: "DELETE" });
+      setWins((list) => list.filter((w) => w._id !== winToDelete._id));
+      setWinToDelete(null);
+      toast.success("Win removed from the record.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title={name} />
+
+      <Link href="/" className="btn btn-ghost -ml-3 mb-4 text-ink-400">
+        <ArrowLeftIcon size={16} />
+        Back to the draw
+      </Link>
+
+      <section className="card animate-fade-up p-6 sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <Avatar employee={employee} size={96} priority className="text-3xl" />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-3xl font-extrabold text-balance text-ink-50">{name}</h1>
+            <p className="mt-1 truncate text-sm text-ink-400">{employee.email}</p>
+            {wins.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="chip border-gold-400/25 bg-gold-400/10 text-gold-300">
+                  <TrophyIcon size={12} />
+                  {plural(wins.length, "win")}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-secondary" onClick={() => setEditing((v) => !v)}>
+              {editing ? <XIcon size={16} /> : <PencilIcon size={16} />}
+              {editing ? "Cancel" : "Edit"}
+            </button>
+            <button type="button" className="btn btn-danger" onClick={() => setConfirmDelete(true)}>
+              <TrashIcon size={16} />
+              Remove
+            </button>
+          </div>
+        </div>
+
+        {editing && (
+          <EditForm employee={employee} busy={busy} onSave={saveDetails} onCancel={() => setEditing(false)} />
+        )}
+      </section>
+
+      <div className="mt-4 grid animate-fade-up gap-4 [animation-delay:.08s] sm:grid-cols-3">
+        <Stat label="This week">
+          <div className="pt-1">
+            <DrawToggle checked={inDraw} onChange={toggleDraw} saving={savingDraw} size="lg" />
+          </div>
+          <span className="mt-2 block text-xs text-ink-500">Flip on once their timesheet is in.</span>
+        </Stat>
+        <Stat label="Odds this draw">
+          <span className="font-display text-4xl font-extrabold tabular-nums text-ink-50">
+            {inDraw && poolSize > 0 ? `1 in ${poolSize}` : "—"}
+          </span>
+          <span className="mt-1 block text-xs text-ink-500">
+            {inDraw ? `${plural(poolSize, "teammate")} in the hat` : "Not in this draw"}
+          </span>
+        </Stat>
+        <Stat label="Wins">
+          <span className="font-display text-4xl font-extrabold tabular-nums text-ink-50">{wins.length}</span>
+          {wins[0] && <span className="mt-1 block text-xs text-ink-500">Last {relativeDate(wins[0].date)}</span>}
+        </Stat>
+      </div>
+
+      <section aria-labelledby="wins-heading" className="mt-10 animate-fade-up [animation-delay:.16s]">
+        <p className="eyebrow">History</p>
+        <h2 id="wins-heading" className="mt-1 font-display text-2xl font-extrabold text-ink-50">
+          Raffle wins
+        </h2>
+
+        {wins.length === 0 ? (
+          <p className="card mt-4 px-6 py-10 text-center text-sm text-ink-400">
+            No wins yet. {employee.firstName}&apos;s time will come.
+          </p>
+        ) : (
+          <ol className="card mt-4 divide-y divide-white/6">
+            {wins.map((win, i) => (
+              <li key={win._id} className="group flex items-center gap-4 px-5 py-4">
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                    i === 0 ? "bg-gold-400/15 text-gold-300" : "bg-white/5 text-ink-400"
+                  }`}
+                >
+                  <TrophyIcon size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-ink-50">{formatLongDate(win.date)}</p>
+                  <p className="text-xs text-ink-500">
+                    {relativeDate(win.date)}
+                    {win.poolSize ? ` · 1 in ${win.poolSize}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWinToDelete(win)}
+                  aria-label={`Remove win from ${formatLongDate(win.date)}`}
+                  className="btn btn-ghost btn-icon h-9 w-9 text-ink-500 hover:text-red-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={deleteEmployee}
+        busy={busy}
+        danger
+        icon={<TrashIcon size={20} />}
+        title={`Remove ${name}?`}
+        description="Their profile and win history will be permanently deleted. This can't be undone."
+        confirmLabel="Remove"
+      />
+      <ConfirmDialog
+        open={Boolean(winToDelete)}
+        onClose={() => setWinToDelete(null)}
+        onConfirm={deleteWin}
+        busy={busy}
+        danger
+        icon={<TrophyIcon size={20} />}
+        title="Remove this win?"
+        description={
+          winToDelete
+            ? `${name}'s win from ${formatLongDate(winToDelete.date)} will be struck from the record. This can't be undone.`
+            : ""
+        }
+        confirmLabel="Remove win"
+      />
+    </div>
+  );
+}
+
+function Stat({ label, children }) {
+  return (
+    <div className="card flex flex-col items-start p-5">
+      <p className="label">{label}</p>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+function EditForm({ employee, busy, onSave, onCancel }) {
   const [values, setValues] = useState({
     firstName: employee.firstName,
     lastName: employee.lastName,
     email: employee.email,
-    imageURL: employee.imageURL,
-    user: employee.user,
+    imageURL: employee.imageURL ?? "",
   });
+  const set = (e) => setValues((v) => ({ ...v, [e.target.name]: e.target.value }));
 
-  const router = useRouter();
-
-  function closeModal() {
-    setIsOpen(false);
-  }
-
-  function closeRaffleModal() {
-    setRaffleIsOpen(false);
-  }
-
-  console.log(employee);
-  // handles the input change and sets the value
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setValues({ ...values, [name]: value });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const res = await fetch(`${API_URL}/api/employees/${employee._id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(values),
-    });
-
-    if (!res.ok) {
-      if (res.status === 403 || res.status === 401) {
-        toast.error("No token included");
-        return;
-      }
-      toast.error("Something Went Wrong");
-    } else {
-      const employee = await res.json();
-      router.push(`/employee/${props.employee.data._id}`);
-    }
-  };
-
-  // Delete employees on button click
-  async function deleteEmployee() {
-    try {
-      const res = await fetch(`${API_URL}/api/employees/${employeeData._id}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message);
-      } else {
-        setIsOpen(false);
-        router.replace(router.asPath);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  async function deleteRaffle(raffleId) {
-    try {
-      const res = await fetch(`${API_URL}/api/raffles/${raffleId}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message);
-      } else {
-        setIsOpen(false);
-        router.replace(router.asPath);
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  if (!editMode) {
-    return (
-      <Layout>
-      <div className="max-w-2xl mx-auto">
-        <div className="flex">
-          {isOpen ? (
-            <Modal
-              closeModal={closeModal}
-              deleteEmployee={deleteEmployee}
-              isOpen
-              employeeData={employee}
-            />
-          ) : null}
-          {employee.imageURL ? (
-            <Image
-              src={employee.imageURL}
-              alt={employee.firstName}
-              width={50}
-              height={50}
-              layout="fixed"
-              style={{ width: "100px", height: "100px" }}
-              className="rounded-full object-cover overflow-hidden"
-            />
-          ) : (
-            <Image
-              src="/assets/placeholder.jpg"
-              alt={employee.firstName}
-              width={50}
-              height={50}
-              layout="fixed"
-              style={{ width: "100px", height: "100px" }}
-              className="rounded-full object-cover overflow-hidden"
-            />
-          )}
-          <div className="ml-4 justify-center flex flex-col">
-            <h3 className="text-2xl font-bold">
-              {employee.firstName} {employee.lastName}
-            </h3>
-            <p className="text-sm">{employee.email}</p>
-          </div>
-        </div>
-        <div className="flex mt-4">
-          <button
-            className="bg-blue-500 text-white px-3 py-1 rounded-md w-full mr-2"
-            onClick={() => setEditMode(!editMode)}
-          >
-            Edit
-          </button>
-          <button
-            className="bg-red-500 text-white px-3 py-1 rounded-md w-full"
-            onClick={() => setIsOpen(true)}
-          >
-            Delete
-          </button>
-        </div>
-        <div className="mt-10">
-          {raffles.length > 0 ? (
-            <>
-            
-          <h3 className="text-2xl font-bold"><span className="underline">Raffles Won:</span> <span className="text-green-500 no-underline">{raffles.length}</span></h3>
-          <div className="flex flex-col gap-y-2">
-            {raffles.map((raffle) => (
-              <>
-                <div
-                  key={raffle._id}
-                  className="w-full hover:bg-slate-700 rounded-md mt-2 px-2 py-2 -mx-2 group flex justify-between items-center"
-                >
-                  <h4 className="text-xl font-semibold">
-                    {new Date(raffle.date).toLocaleDateString("en-us", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </h4>
-                  <button onClick={() => setRaffleIsOpen(true)}>
-                    <Image
-                      src="/assets/delete.svg"
-                      alt="delete"
-                      width={20}
-                      height={20}
-                      layout="fixed"
-                      style={{ width: "20px", height: "20px" }}
-                      className="align-top hidden group-hover:block"
-                    />
-                  </button>
-                </div>
-                {raffleIsOpen ? (
-                  <RaffleModal
-                    closeModal={closeRaffleModal}
-                    deleteRaffle={deleteRaffle}
-                    isOpen={raffleIsOpen}
-                    raffleData={raffle}
-                    employeeData={employee}
-                  />
-                ) : null}
-              </>
-            ))}
-          </div>
-          </>
-          ) : (
-            <h3 className="text-2xl font-bold">No Raffles Won</h3>
-          )}
-        </div>
-        </div>
-      </Layout>
-    );
-  }
   return (
-    <Layout>
-      <div className="max-w-2xl mx-auto">
-      <button
-        className="flex items-center text-slate-500 mb-4"
-        onClick={() => setEditMode(!editMode)}
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={1.5}
-          stroke="currentColor"
-          className="w-4 h-4 mr-1"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"
-          />
-        </svg>
-        Back
-      </button>
-      <form onSubmit={handleSubmit}>
-        <div className="lg:flex w-full gap-x-2 mb-4">
-          <div className="w-full mb-4 lg:mb-0">
-            <label htmlFor="firstName">First Name</label>
-            <input
-              className="w-full px-3 py-2 text-sm text-gray-100 bg-slate-700 border border-gray-800 rounded focus:outline-none focus:border-slate-500"
-              type="text"
-              name="firstName"
-              id="firstName"
-              value={values.firstName}
-              onChange={handleInputChange}
-            />
-          </div>
-          <div className="w-full">
-            <label htmlFor="lastName">Last Name</label>
-            <input
-              className="w-full px-3 py-2 text-sm text-gray-100 bg-slate-700 border border-gray-800 rounded focus:outline-none focus:border-slate-500"
-              type="text"
-              name="lastName"
-              id="lastName"
-              value={values.lastName}
-              onChange={handleInputChange}
-            />
-          </div>
-        </div>
-        <div className="flex flex-col mb-4">
-          <label htmlFor="email">Email</label>
-          <input
-            className="w-full px-3 py-2 text-sm text-gray-100 bg-slate-700 border border-gray-800 rounded focus:outline-none focus:border-slate-500"
-            type="text"
-            name="email"
-            id="email"
-            value={values.email}
-            onChange={handleInputChange}
-          />
-        </div>
-        <div className="flex flex-col">
-          <label htmlFor="imageURL">Image URL</label>
-          <input
-            className="w-full px-3 py-2 text-sm text-gray-100 bg-slate-700 border border-gray-800 rounded focus:outline-none focus:border-slate-500"
-            type="text"
-            name="imageURL"
-            id="imageURL"
-            value={values.imageURL}
-            onChange={handleInputChange}
-          />
-        </div>
-        <button
-          className="bg-blue-500 text-white px-3 py-1 rounded-md w-full mr-2 mt-4"
-          type="submit"
-          // onClick={() => setEditMode(!editMode)}
-        >
-          Save
+    <form
+      className="mt-6 grid gap-4 border-t border-white/6 pt-6 sm:grid-cols-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(values);
+      }}
+    >
+      <Field label="First name" name="firstName" value={values.firstName} onChange={set} required autoFocus />
+      <Field label="Last name" name="lastName" value={values.lastName} onChange={set} required />
+      <Field label="Email" name="email" type="email" value={values.email} onChange={set} required />
+      <Field label="Photo URL" name="imageURL" type="url" value={values.imageURL} onChange={set} placeholder="https://…" />
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>
+          Cancel
         </button>
-      </form>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          Save changes
+        </button>
       </div>
-    </Layout>
+    </form>
   );
 }
 
-export async function getServerSideProps({ query: { id } }) {
-  const res = await fetch(`${API_URL}/api/employees/${id}`);
-  const employee = await res.json();
+export async function getServerSideProps({ req, res, params }) {
+  const session = await getSession(req, res);
+  if (!session) return { redirect: { destination: "/", permanent: false } };
 
-  return {
-    props: {
-      employee,
-    },
-  };
+  const [result, employees] = await Promise.all([getEmployeeWithWins(params.id), getEmployees()]);
+  if (!result) return { notFound: true };
+
+  const poolSize = employees.filter((e) => e.entries > 0).length;
+  return { props: { session, employee: result.employee, wins: result.wins, poolSize } };
 }

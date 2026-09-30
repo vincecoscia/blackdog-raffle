@@ -1,70 +1,38 @@
-import "/styles/globals.css";
-import Layout from "/components/Layout";
-import Nav from "/components/Nav";
-import Router from "next/router";
-import React from "react";
-import { Analytics } from "@vercel/analytics/react";
+import "@/styles/globals.css";
+import { Inter, Syne } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
+import { Analytics } from "@vercel/analytics/next";
 import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import Header from "@/components/Header";
+import Layout from "@/components/Layout";
 
-function MyApp({ Component, pageProps: { session, ...pageProps } }) {
-  const [loading, setLoading] = React.useState(false);
-  React.useEffect(() => {
-    const start = () => {
-      console.log("start");
-      setLoading(true);
-    };
-    const end = () => {
-      console.log("finished");
-      setLoading(false);
-    };
-    Router.events.on("routeChangeStart", start);
-    Router.events.on("routeChangeComplete", end);
-    Router.events.on("routeChangeError", end);
-    return () => {
-      Router.events.off("routeChangeStart", start);
-      Router.events.off("routeChangeComplete", end);
-      Router.events.off("routeChangeError", end);
-    };
-  }, []);
+const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-inter" });
+const syne = Syne({ subsets: ["latin"], weight: ["700", "800"], display: "swap", variable: "--font-syne" });
+
+export default function App({ Component, pageProps: { session, ...pageProps } }) {
   return (
-    <>
-      {loading ? (
-        <SessionProvider session={session}>
-          <Nav />
-          <div className="flex justify-center items-center w-full h-screen md:h-full md:mt-24">
-            <div className="lds-ellipsis">
-              <div></div>
-              <div></div>
-              <div></div>
-              <div></div>
-            </div>
-          </div>
-        </SessionProvider>
-      ) : (
-        <SessionProvider session={session}>
-          <Nav />
-          <Layout>
-            <Component {...pageProps} loading={loading} />
-          </Layout>
-        </SessionProvider>
-      )}
-      <Analytics />
+    <SessionProvider session={session}>
+      {/* Expose the font families on :root so portals (dialogs, toasts) inherit them too. */}
+      <style jsx global>{`
+        :root {
+          --font-inter: ${inter.style.fontFamily};
+          --font-syne: ${syne.style.fontFamily};
+        }
+      `}</style>
+      <Header />
+      <Layout>
+        <Component {...pageProps} session={session} />
+      </Layout>
       <ToastContainer
         position="bottom-right"
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={false}
+        theme="dark"
+        autoClose={3500}
+        newestOnTop
         closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
         pauseOnHover
-        theme="colored"
+        draggable={false}
       />
-    </>
+      <Analytics />
+    </SessionProvider>
   );
 }
-
-export default MyApp;

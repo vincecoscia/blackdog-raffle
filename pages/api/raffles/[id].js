@@ -1,37 +1,26 @@
-import connectDB from "../../../db/connection";
-import Raffle from "../../../db/models/Raffle";
+import connectDB from "@/db/connection";
+import Raffle from "@/db/models/Raffle";
+import { route, ApiError } from "@/lib/api";
+import { isValidId, serialize } from "@/lib/data";
 
-export default async function getRaffle(req, res) {
-  await connectDB().catch((err) => {
-    console.log(err);
-  });
+export default route({
+  // GET /api/raffles/:id
+  async GET(req, res) {
+    const { id } = req.query;
+    if (!isValidId(id)) throw new ApiError(404, "Raffle not found.");
+    await connectDB();
+    const raffle = await Raffle.findById(id).populate("winner", "firstName lastName imageURL").lean();
+    if (!raffle) throw new ApiError(404, "Raffle not found.");
+    res.status(200).json({ success: true, data: serialize(raffle) });
+  },
 
-  const { method } = req;
-
-  switch (method) {
-    case "GET":
-      try {
-        const raffle = await Raffle.findById(req.query.id);
-        res.status(200).json({ success: true, data: raffle });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    case "DELETE":
-      try {
-        const deletedRaffle = await Raffle.deleteOne({ _id: req.query.id });
-        if (!deletedRaffle) {
-          return res.status(400).json({ success: false });
-        }
-        res.status(200).json({ success: true, data: {} });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    default:
-      res.setHeader("Allow", ["GET", "PUT"]);
-      res.status(400).json({ success: false });
-      break;
-  }
-}
-
+  // DELETE /api/raffles/:id — strike a win from the record.
+  async DELETE(req, res) {
+    const { id } = req.query;
+    if (!isValidId(id)) throw new ApiError(404, "Raffle not found.");
+    await connectDB();
+    const deleted = await Raffle.findByIdAndDelete(id).lean();
+    if (!deleted) throw new ApiError(404, "Raffle not found.");
+    res.status(200).json({ success: true, data: {} });
+  },
+});

@@ -1,8 +1,4 @@
-// Next.js API route support: https://nextjs.org/docs/api-routes/introduction
+// Unauthenticated health check (handy for uptime monitors).
 export default function handler(req, res) {
-  res.status(200).json({ name: 'John Doe' })
+  res.status(200).json({ ok: true, app: "blackdog-raffle" });
 }
-
-import connectDB from "../../db/connection"
-
-connectDB();

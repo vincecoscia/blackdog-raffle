@@ -1,26 +1,18 @@
-const mongoose = require('mongoose');
+import mongoose from "mongoose";
 
-const EmployeeSchema = new mongoose.Schema({
-  firstName: {
-    type: String,
+const EmployeeSchema = new mongoose.Schema(
+  {
+    firstName: { type: String, required: true, trim: true },
+    lastName: { type: String, required: true, trim: true },
+    email: { type: String, required: true, trim: true, lowercase: true },
+    imageURL: { type: String, default: "", trim: true },
+    // 1 = in this week's draw (timesheet submitted), 0 = sitting out. The field
+    // keeps its historical name so existing documents work untouched.
+    entries: { type: Number, default: 1, min: 0, max: 1 },
+    // Email of the teammate who created this record.
+    user: { type: String, required: true },
   },
-  lastName: {
-    type: String,
-  },
-  email: {
-    type: String,
-  },
-  imageURL: {
-    type: String,
-  },
-  entries: {
-    type: Number,
-    default: 0
-  },
-  user: {
-    type: String,
-    required: true
-  },
-});
+  { timestamps: true }
+);
 
-module.exports = mongoose.models.Employee || mongoose.model('Employee', EmployeeSchema);
+export default mongoose.models.Employee || mongoose.model("Employee", EmployeeSchema);

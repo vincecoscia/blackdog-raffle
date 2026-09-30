@@ -1,33 +1,17 @@
-import connectDB from "../../db/connection";
-import Raffle from "../../db/models/Raffle";
+import { route } from "@/lib/api";
+import { drawWinner, getRecentWinners } from "@/lib/data";
 
-export default async function raffleHandler(req, res) {
-  await connectDB().catch((err) => {
-    console.log(err);
-  });
+export default route({
+  // GET /api/raffle — most recent winners, newest first.
+  async GET(req, res) {
+    const limit = Math.min(Number(req.query.limit) || 8, 50);
+    res.status(200).json({ success: true, data: await getRecentWinners(limit) });
+  },
 
-  const { method } = req;
-  switch (method) {
-    case "GET":
-      try {
-        const raffle = await Raffle.find();
-        res.status(200).json({ success: true, data: raffle });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-    case "POST":
-      try {
-        const raffle = await Raffle.create(req.body);
-        res.status(201).json({ success: true, data: raffle });
-      } catch (error) {
-        res.status(400).json({ success: false });
-      }
-      break;
-
-    default:
-      res.setHeader("Allow", ["GET", "POST", "PUT"]);
-      res.status(400).json({ success: false });
-      break;
-  }
-}
+  // POST /api/raffle — draw a winner. The server picks and records the win
+  // atomically; the client only animates toward the result.
+  async POST(req, res, session) {
+    const result = await drawWinner({ drawnBy: session.user.email });
+    res.status(201).json({ success: true, data: result });
+  },
+});

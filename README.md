@@ -1,34 +1,67 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Blackdog Raffle
 
-## Getting Started
+The weekly draw for the Blackdog team. Everyone who turns in their timesheet gets
+one entry; hit **Draw a winner** and the reel does the rest.
 
-First, run the development server:
+Built with Next.js 16 (Pages Router), React 19, Tailwind CSS 4, next-auth (Google
+sign-in) and MongoDB via Mongoose.
+
+## How it works
+
+- **The reel** — a slot-machine strip of everyone in the draw. The draw itself
+  happens on the server (`POST /api/raffle`) using `crypto.randomInt`, and the
+  win is recorded in the same request, so what lands on the payline is always
+  what's in the database. The client just animates toward the result:
+  accelerate → cruise → constant-friction deceleration with the last few names
+  ticking past → a spring "detent" bounce as it stops. Sound is synthesised
+  with the Web Audio API (no audio files) and can be muted; motion respects
+  `prefers-reduced-motion`.
+- **The roster** — flip a teammate *in* once their timesheet is in, or *out* if
+  they're sitting the week out. "Everyone in / Everyone out" resets the whole
+  team in one write. Changes are optimistic and save in the background.
+- **Profiles** — win history per teammate, plus editing and removal.
+- **Access** — Google sign-in restricted to the suffixes in `EMAIL_WHITELIST`.
+  Every API route requires a session.
+
+## Running locally
 
 ```bash
+cp .env.example .env   # then fill it in
+npm install
 npm run dev
-# or
-yarn dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>. `npm run build && npm start` for a production
+build; `npm run lint` runs ESLint.
 
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
+## Project layout
 
-[API routes](https://nextjs.org/docs/api-routes/introduction) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.js`.
+```
+pages/            routes (index = sign-in or dashboard, employee/*, api/*)
+components/       UI — RaffleSlotMachine (the reel), WinnerReveal, Employees…
+hooks/            useEmployees (optimistic roster state)
+lib/              auth, data access (shared by API routes and SSR), reel maths,
+                  sound, confetti, formatting
+db/               Mongoose connection (cached for serverless) and models
+styles/           Tailwind 4 theme tokens, keyframes and reusable classes
+```
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/api-routes/introduction) instead of React pages.
+## API
 
-## Learn More
+All routes need a signed-in session.
 
-To learn more about Next.js, take a look at the following resources:
+| Method | Route                     | Purpose                                      |
+| ------ | ------------------------- | -------------------------------------------- |
+| GET    | `/api/employees`          | Roster, sorted by first name                 |
+| POST   | `/api/employees`          | Add a teammate (`inDraw` defaults to true)   |
+| GET    | `/api/employees/:id`      | Profile + win history                        |
+| PUT    | `/api/employees/:id`      | Edit details, or `{ inDraw: true/false }`    |
+| DELETE | `/api/employees/:id`      | Remove teammate and their wins               |
+| PUT    | `/api/reset-entries`      | `{ inDraw }` for everyone at once            |
+| GET    | `/api/raffle`             | Recent winners (`?limit=`)                   |
+| POST   | `/api/raffle`             | Draw and record a winner                     |
+| DELETE | `/api/raffles/:id`        | Strike a win from the record                 |
+| GET    | `/api/hello`              | Unauthenticated health check                 |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+> The `entries` field on employees is kept as `0`/`1` for compatibility with
+> the original data; the app treats it as an in/out flag.

@@ -1,22 +1,18 @@
-import connectDB from "../../db/connection";
-import Employee from "../../db/models/Employee";
+import connectDB from "@/db/connection";
+import Employee from "@/db/models/Employee";
+import { route, ApiError } from "@/lib/api";
+import { parseInDraw } from "@/lib/data";
 
-export default async function handler(req, res) {
-  if (req.method !== 'PUT') {
-    return res.status(405).end();
-  }
+export default route({
+  // PUT /api/reset-entries { inDraw } — put everyone in (or take everyone out
+  // of) the draw in a single write. Typical use: "everyone out" on Monday,
+  // then flip people in as their timesheets land.
+  async PUT(req, res) {
+    const entries = parseInDraw(req.body?.inDraw ?? true);
+    if (entries === null) throw new ApiError(400, "inDraw must be true or false.");
 
-  await connectDB().catch((err) => {
-    console.log(err);
-  });
-
-  try {
-    // Update entries for all employees to 1
-    await Employee.updateMany({}, { $set: { entries: 1 } });
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Error resetting entries:', error);
-    return res.status(500).json({ success: false });
-  }
-}
+    await connectDB();
+    const result = await Employee.updateMany({}, { $set: { entries } });
+    res.status(200).json({ success: true, data: { inDraw: entries === 1, updated: result.modifiedCount } });
+  },
+});

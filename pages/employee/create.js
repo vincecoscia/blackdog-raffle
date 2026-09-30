@@ -1,127 +1,117 @@
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/router";
-import { useSession } from "next-auth/react";
-import Layout from "../../components/Layout";
-import { API_URL } from "../../config/index";
+import { useState } from "react";
+import { toast } from "react-toastify";
+import Avatar from "@/components/Avatar";
+import DrawToggle from "@/components/DrawToggle";
+import Field from "@/components/Field";
+import Header from "@/components/Header";
+import { ArrowLeftIcon, PlusIcon, Spinner } from "@/components/icons";
+import { getSession } from "@/lib/auth";
+import { api } from "@/lib/client";
+import { fullName } from "@/lib/format";
+
+const EMPTY = { firstName: "", lastName: "", email: "", imageURL: "", inDraw: true };
 
 export default function CreateEmployee() {
-  const [values, setValues] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    imageURL: "",
-    user: "",
-  });
-
-  console.log(values);
-
-  const { data: session } = useSession();
-
   const router = useRouter();
+  const [values, setValues] = useState(EMPTY);
+  const [busy, setBusy] = useState(false);
 
-  // handle form submission and send data to API
-  const handleSubmit = async (e) => {
+  const set = (e) => setValues((v) => ({ ...v, [e.target.name]: e.target.value }));
+  const preview = { ...values, firstName: values.firstName || "New", lastName: values.lastName || "Teammate" };
+
+  const submit = async (e) => {
     e.preventDefault();
-
-    // Validation
-    const hasEmptyFields = Object.values(values).some(
-      (element) => element === ""
-    );
-
-    if (hasEmptyFields) {
-      alert("Please fill in all fields");
-    }
-
-    // Set user to the session user email
-    values.user = session.user.email;
-
-    // Make sure values.user ends in @blackdogadvertising.com to prevent unauthorized users from creating employees
-    if (!values.user.endsWith("@blackdogadvertising.com")) {
-      alert("You are not authorized to create employees");
+    if (!values.firstName.trim() || !values.lastName.trim() || !values.email.trim()) {
+      toast.error("First name, last name and email are required.");
       return;
     }
-      const res = await fetch(`${API_URL}/api/employees`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(values),
-      });
-
-    if (!res.ok) {
-      console.log("error");
-    } else {
-      const employee = await res.json();
-      router.push(`/`);
+    setBusy(true);
+    try {
+      const { data } = await api("/api/employees", { method: "POST", body: values });
+      toast.success(`${fullName(data)} is in the draw!`);
+      router.push("/");
+    } catch (err) {
+      toast.error(err.message);
+      setBusy(false);
     }
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setValues({ ...values, [name]: value });
   };
 
   return (
-    <Layout>
-      <div className="container mx-auto">
-        <h1 className="text-3xl font-bold mb-5">Add Employee</h1>
-        <form onSubmit={handleSubmit}>
-          <div className="grid lg:grid-cols-2 lg:gap-6">
-            <div className="mb-5 lg:mb-0">
-              <label className="block text-sm font-bold mb-2">First Name</label>
-              <input
-                type="text"
-                name="firstName"
-                value={values.firstName}
-                onChange={handleInputChange}
-                className="shadow appearance-none rounded w-full py-2 px-3 text-white leading-tight focus:outline-none focus:shadow-outline bg-slate-700"
-                placeholder="First Name"
-              />
-            </div>
-            <div className="lg:mb-0 mb-5">
-              <label className="block text-sm font-bold mb-2">Last Name</label>
-              <input
-                type="text"
-                name="lastName"
-                value={values.lastName}
-                onChange={handleInputChange}
-                className="shadow appearance-none rounded w-full py-2 px-3 text-white leading-tight focus:outline-none focus:shadow-outline bg-slate-700"
-                placeholder="Last Name"
-              />
-            </div>
-            <div className="lg:mb-0 mb-5">
-              <label className="block text-sm font-bold mb-2">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={values.email}
-                onChange={handleInputChange}
-                className="shadow appearance-none rounded w-full py-2 px-3 text-white leading-tight focus:outline-none focus:shadow-outline bg-slate-700"
-                placeholder="Email"
-              />
-            </div>
-            <div className="mb-6">
-              <label className="block text-sm font-bold mb-2">Image URL</label>
-              <input
-                type="text"
-                name="imageURL"
-                value={values.imageURL}
-                onChange={handleInputChange}
-                className="shadow appearance-none rounded w-full py-2 px-3 text-white leading-tight focus:outline-none focus:shadow-outline bg-slate-700"
-                placeholder="Image URL"
-              />
+    <div className="mx-auto max-w-4xl">
+      <Header title="Add teammate" />
+
+      <Link href="/" className="btn btn-ghost -ml-3 mb-4 text-ink-400">
+        <ArrowLeftIcon size={16} />
+        Back to the draw
+      </Link>
+
+      <div className="grid animate-fade-up gap-6 lg:grid-cols-[1fr_320px]">
+        <form onSubmit={submit} className="card p-6 sm:p-8">
+          <p className="eyebrow">New teammate</p>
+          <h1 className="mt-1 font-display text-3xl font-extrabold text-ink-50">Add to the draw</h1>
+          <p className="mt-2 text-sm text-ink-400">They&apos;ll show up on the reel as soon as they&apos;re in the draw.</p>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            <Field label="First name" name="firstName" value={values.firstName} onChange={set} required autoFocus />
+            <Field label="Last name" name="lastName" value={values.lastName} onChange={set} required />
+            <Field
+              label="Email"
+              name="email"
+              type="email"
+              value={values.email}
+              onChange={set}
+              required
+              className="sm:col-span-2"
+            />
+            <Field
+              label="Photo URL"
+              name="imageURL"
+              type="url"
+              value={values.imageURL}
+              onChange={set}
+              placeholder="https://…"
+              hint="Optional. Without a photo they get a coloured initials avatar."
+              className="sm:col-span-2"
+            />
+            <div className="sm:col-span-2">
+              <span className="label">This week&apos;s draw</span>
+              <div className="pt-1">
+                <DrawToggle checked={values.inDraw} onChange={(inDraw) => setValues((v) => ({ ...v, inDraw }))} />
+              </div>
             </div>
           </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-            >
-              Add Employee
+
+          <div className="mt-8 flex justify-end gap-2">
+            <Link href="/" className="btn btn-ghost">
+              Cancel
+            </Link>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              {busy ? <Spinner size={16} /> : <PlusIcon size={16} />}
+              Add teammate
             </button>
           </div>
         </form>
+
+        <aside className="lg:pt-10">
+          <p className="label">Preview</p>
+          <div className="card flex items-center gap-3 p-4">
+            <Avatar key={values.imageURL} employee={preview} size={48} />
+            <div className="min-w-0">
+              <p className="truncate font-display font-bold text-ink-50">{fullName(preview)}</p>
+              <p className="truncate text-xs text-ink-400">{values.email || "email@blackdogadvertising.com"}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-ink-500">This is how they&apos;ll look on the reel and the roster.</p>
+        </aside>
       </div>
-    </Layout>
+    </div>
   );
+}
+
+export async function getServerSideProps({ req, res }) {
+  const session = await getSession(req, res);
+  if (!session) return { redirect: { destination: "/", permanent: false } };
+  return { props: { session } };
 }

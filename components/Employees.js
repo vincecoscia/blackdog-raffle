@@ -1,175 +1,183 @@
 import Link from "next/link";
-import Image from "next/image";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
-import { API_URL } from "../config/index";
-import Modal from "../components/Modal";
+import { useMemo, useState } from "react";
+import { toast } from "react-toastify";
+import EmployeeCard from "./EmployeeCard";
+import ConfirmDialog from "./Modal";
+import { CheckIcon, PlusIcon, SearchIcon, TrashIcon, UsersIcon, XIcon } from "./icons";
+import { fullName, plural } from "@/lib/format";
 
-export default function Employees(props) {
-  let [isOpen, setIsOpen] = useState(false);
-  let [entries, setEntries] = useState(props.employee.entries || []);
+const FILTERS = [
+  { key: "all", label: "Everyone" },
+  { key: "in", label: "In the draw" },
+  { key: "out", label: "Sitting out" },
+];
 
-  const { refetch } = props; 
+/** Roster: search, everyone-in/out controls and the grid of teammate cards. */
+export default function Employees({ employees, savingIds, winCounts = {}, onToggle, onRemove, onSetAll }) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [bulk, setBulk] = useState(null); // true = everyone in, false = everyone out
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
 
-  let employeeData = props.employee;
+  const inCount = employees.filter((e) => e.entries > 0).length;
+  const outCount = employees.length - inCount;
 
-  const router = useRouter();
-
-  function closeModal() {
-    setIsOpen(false);
-  }
-
-  function openModal() {
-    setIsOpen(true);
-  }
-
-  // Delete employees on button click
-  async function deleteEmployee() {
-    try {
-      const res = await fetch(`${API_URL}/api/employees/${employeeData._id}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message);
-      } else {
-        setIsOpen(false);
-        router.replace(router.asPath);
-        refetch();
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  const [values, setValues] = useState({
-    entries: employeeData.entries,
-  });
-
-  // handles the input change and sets the value
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setValues({ ...values, [name]: value });
-  };
-
-  // handle the form submission
-  const handleEntryUpdate = async (e) => {
-    e.preventDefault();
-
-    // Validation
-    const hasEmptyFields = Object.values(values).some(
-      (element) => element === ""
-    );
-
-    if (hasEmptyFields) {
-      alert("Please fill in all fields");
-    }
-
-    const res = await fetch(`${API_URL}/api/employees/${e.target.id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(values),
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return employees.filter((e) => {
+      if (filter === "in" && e.entries === 0) return false;
+      if (filter === "out" && e.entries > 0) return false;
+      return !q || `${fullName(e)} ${e.email}`.toLowerCase().includes(q);
     });
+  }, [employees, query, filter]);
 
-    if (!res.ok) {
-      console.log("error");
-    } else {
-      const employee = await res.json();
-      setEntries(employee.data.entries);
-      refetch();
+  const confirmBulk = async () => {
+    setBusy(true);
+    try {
+      await onSetAll(bulk);
+      toast.success(bulk ? "Everyone is in the draw." : "Everyone is sitting out — flip people in as timesheets land.");
+      setBulk(null);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  useEffect(() => {
-    setEntries(employeeData.entries);
-    setValues({ entries: employeeData.entries });
-  }, [employeeData.entries]);
+  const confirmDelete = async () => {
+    setBusy(true);
+    try {
+      await onRemove(deleting._id);
+      toast.success(`${fullName(deleting)} was removed.`);
+      setDeleting(null);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div
-      key={employeeData._id}
-      className="bg-slate-800 rounded-lg shadow-lg p-5"
-    >
-      {isOpen ? (
-        <Modal
-          closeModal={closeModal}
-          deleteEmployee={deleteEmployee}
-          isOpen
-          employeeData={employeeData}
-        />
-      ) : null}
-      <div className="flex justify-between">
-        <div className="flex items-center">
-          <Link href={`/employee/${employeeData._id}`}>
-            {employeeData.imageURL ? (
-              <Image
-                src={employeeData.imageURL}
-                alt={employeeData.firstName}
-                width={50}
-                height={50}
-                layout="fixed"
-                style={{ width: "50px", height: "50px" }}
-                className="rounded-full object-cover overflow-hidden"
-              />
-            ) : (
-              <Image
-                src="/assets/placeholder.jpg"
-                alt={employeeData.firstName}
-                width={50}
-                height={50}
-                layout="fixed"
-                style={{ width: "50px", height: "50px" }}
-                className="rounded-full object-cover overflow-hidden"
-              />
-            )}
-          </Link>
-          <div className="ml-3">
-            <h3 className="text-lg font-bold">
-              {employeeData.firstName} {employeeData.lastName}
-            </h3>
-            <p className="text-xs">{employeeData.email}</p>
+    <section aria-labelledby="roster-heading" className="mt-14">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="eyebrow">The team</p>
+          <h2 id="roster-heading" className="mt-1 font-display text-2xl font-extrabold text-ink-50">
+            {plural(inCount, "teammate")} in the draw
+          </h2>
+          <p className="mt-1 text-sm text-ink-400">
+            Flip someone on once their timesheet is in — one entry each, no favourites.
+            {outCount > 0 && ` ${plural(outCount, "person is", "people are")} sitting out.`}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn btn-secondary" onClick={() => setBulk(true)} disabled={!employees.length}>
+            <CheckIcon size={15} className="text-gold-300" />
+            Everyone in
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => setBulk(false)} disabled={!employees.length}>
+            <XIcon size={15} />
+            Everyone out
+          </button>
+        </div>
+      </div>
+
+      {employees.length > 0 && (
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div role="group" aria-label="Filter teammates" className="flex gap-1 rounded-xl border border-white/8 bg-white/3 p-1">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                aria-pressed={filter === f.key}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  filter === f.key ? "bg-white/10 text-ink-50 shadow-sm" : "text-ink-400 hover:text-ink-100"
+                }`}
+              >
+                {f.label}
+                <span className="ml-1.5 text-ink-500 tabular-nums">
+                  {f.key === "all" ? employees.length : f.key === "in" ? inCount : outCount}
+                </span>
+              </button>
+            ))}
           </div>
+          <label className="relative block">
+            <SearchIcon size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-500" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find a teammate"
+              aria-label="Find a teammate"
+              className="input pl-9 sm:w-64"
+            />
+          </label>
         </div>
-        <button onClick={openModal}>
-          <Image
-            src="/assets/delete.svg"
-            alt="delete"
-            width={20}
-            height={20}
-            layout="fixed"
-            style={{ width: "20px", height: "20px" }}
-            className="align-top mb-5"
-          />
-        </button>
-      </div>
-      <div className="flex items-center mt-5">
-        <div className="flex items-center">
-          <p className="text-sm font-bold">Current Entries: </p>
-          <p className="text-sm ml-2">{entries}</p>
+      )}
+
+      {employees.length === 0 ? (
+        <div className="card mt-6 flex flex-col items-center px-6 py-16 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gold-400/10 text-gold-300">
+            <UsersIcon size={26} />
+          </div>
+          <h3 className="mt-4 font-display text-lg font-bold">No teammates yet</h3>
+          <p className="mt-1 max-w-sm text-sm text-ink-400">
+            Add the team, flip them into the draw, then hit Draw and let the reel do its thing.
+          </p>
+          <Link href="/employee/create" className="btn btn-primary mt-6">
+            <PlusIcon size={16} />
+            Add your first teammate
+          </Link>
         </div>
-      </div>
-      <form
-        className="flex items-center mt-5"
-        onSubmit={handleEntryUpdate}
-        id={employeeData._id}
-      >
-        <input
-          type="number"
-          name="entries"
-          value={values.entries}
-          onChange={handleInputChange}
-          className="bg-slate-700 text-white rounded-lg p-2 w-24"
-          placeholder={employeeData.entries}
-        />
-        <button
-          type="submit"
-          className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded ml-3"
-        >
-          Update Entries
-        </button>
-      </form>
-    </div>
+      ) : filtered.length === 0 ? (
+        <p className="card mt-4 px-6 py-10 text-center text-sm text-ink-400">
+          {query ? <>Nobody matches &ldquo;{query}&rdquo;.</> : "Nobody here."}
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((employee, i) => (
+            <EmployeeCard
+              key={employee._id}
+              employee={employee}
+              wins={winCounts[employee._id] ?? 0}
+              saving={savingIds.has(employee._id)}
+              onToggle={(inDraw) => onToggle(employee._id, inDraw)}
+              onDelete={() => setDeleting(employee)}
+              style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+            />
+          ))}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={bulk !== null}
+        onClose={() => setBulk(null)}
+        onConfirm={confirmBulk}
+        busy={busy}
+        icon={bulk ? <CheckIcon size={20} /> : <XIcon size={20} />}
+        title={bulk ? "Put everyone in the draw?" : "Take everyone out of the draw?"}
+        description={
+          bulk
+            ? `All ${employees.length} teammates will have an entry in the next draw.`
+            : `Nobody will be in the draw until you flip them back on — handy at the start of a new week.`
+        }
+        confirmLabel={bulk ? "Everyone in" : "Everyone out"}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+        busy={busy}
+        danger
+        icon={<TrashIcon size={20} />}
+        title={deleting ? `Remove ${fullName(deleting)}?` : ""}
+        description="Their profile and win history will be permanently deleted. This can't be undone."
+        confirmLabel="Remove"
+      />
+    </section>
   );
 }

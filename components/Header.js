@@ -1,10 +1,14 @@
 import Head from "next/head";
 
-export default function Header() {
+/** Per-page <head> tags. Pass `title` to prefix the app name. */
+export default function Header({ title, description = "Weekly raffle for the Blackdog team." }) {
+  const fullTitle = title ? `${title} · Blackdog Raffle` : "Blackdog Raffle";
   return (
     <Head>
-      <title>Blackdog Raffle</title>
-      <meta name="description" content="A raffle app for Blackdog Employees" />
+      <title>{fullTitle}</title>
+      <meta name="description" content={description} />
+      <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+      <meta name="theme-color" content="#070709" />
       <link rel="icon" href="/favicon.ico" />
     </Head>
   );
