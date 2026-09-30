@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { dogDefs } from "@/lib/card-dog";
 import { sfx } from "@/lib/sound";
 import {
   DEFAULT_MOON,
@@ -65,8 +66,8 @@ export default function DogFetch({ participants, onReady, onLanded, onSuspense }
 const MINT = "#77ddaf"; // brand accent (same as lib/themes MINT)
 const INK = "#0a0a0d"; // the dog
 const INK_FAR = "#202027"; // far-side legs, a touch lighter for depth
-const EAR = "#1c1c23";
 const EDGE = "#32323c"; // hairline that separates near-side legs from the body
+const DETAIL = "#34343f"; // brow, lip and toe lines
 const BONE = "#f2e8d5";
 const BONE_SHADE = "#d6c5a4";
 const BONE_LINE = "#1d1914";
@@ -96,15 +97,29 @@ const FRONT_ATTACH = [100, 18];
 const REAR_ATTACH = [6, 14];
 const FRONT_LEG = { L1: 48, L2: 44, W1: 22, W2: 15 };
 const REAR_LEG = { L1: 48, L2: 46, W1: 30, W2: 16 };
-const NECK_LEN = 56;
-const MOUTH = [46, 35]; // held-bone centre: clamped just under the muzzle
-const NOSE = [80, 0];
+const NECK_LEN = 62;
+const CHEST = { cx: 95, cy: 6, rx: 38, ry: 41 }; // also the front of the throat
+const TAG_AT = [14, -21.5]; // where the collar tag hangs, under the throat
+const MOUTH = [46, 33]; // held-bone centre: in the mouth, under the upper lip
+const NOSE = [86, -4];
+const JAW_HINGE = [20, 14];
+const JAW_MAX = 0.5; // radians, mouth wide open
+const JAW_HOLD = 0.28; // how far open (0..1) while carrying a bone
+// Mouth movement per sound: how wide (0..1) and how long it stays open (s).
+const VOICES = {
+  bark: { open: 0.8, hold: 0.14 },
+  yip: { open: 0.5, hold: 0.05 },
+  woof: { open: 0.95, hold: 0.12 },
+  howl: { open: 0.75, hold: 1.25, lookUp: 1 },
+  toss: { open: 0.75, hold: 0.12 },
+};
 const PAW_Y = -8;
 const STRIDE = 22;
 const LIFT = 16;
 const GAIT_LENGTH = 80; // ground covered per full stride cycle
-const TAIL_SEGMENTS = [14, 12, 10, 8, 6];
-const TAIL_SEG_LEN = 17;
+const TAIL_SEGMENTS = [14, 13, 12, 10.5, 9, 7.5, 6, 4.5]; // widths, base to tip
+const TAIL_SEG_LEN = 10.6;
+const TAIL_BEND = 5 / TAIL_SEGMENTS.length; // pose curl is tuned for a 5-segment tail
 
 // Poses are blended stand → sit and stand → dig.
 //   hipH: hip height; p: torso pitch (negative lifts the chest);
@@ -121,6 +136,7 @@ const POSE_KEYS = Object.keys(POSES.stand);
 const BONE_PATH =
   "M -33 -11 L 33 -11 A 15 15 0 1 1 58.2 0 A 15 15 0 1 1 33 11 L -33 11 A 15 15 0 1 1 -58.2 0 A 15 15 0 1 1 -33 -11 Z";
 const STAR_PATH = "M 0 -8 L 2 -2 L 8 0 L 2 2 L 0 8 L -2 2 L -8 0 L -2 -2 Z";
+const TOES = "M 9.5 -4 L 10 1.5 M 14 -3 L 14.5 1.5"; // on a paw centred at (5, 0)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -199,6 +215,7 @@ function createEngine(host, callbacks) {
   ], { cx: "55%", cy: "42%", r: "75%" });
   const moon = THEME_ART[theme]?.moon ?? DEFAULT_MOON;
   radial("dfMoon", moon.stops);
+  defs.insertAdjacentHTML("beforeend", dogDefs(moon.ring));
   radial("dfShadow", [
     ["0", "#000", 0.6],
     ["1", "#000", 0],
@@ -245,10 +262,12 @@ function createEngine(host, callbacks) {
   const fxLayer = el("g", {}, world);
 
   // ---- the dog ---------------------------------------------------------------
-  const dogRoot = el("g", { "data-part": "dog" }, dogLayer);
   const speedLines = [0, 1, 2].map(() =>
     el("line", { stroke: MINT, "stroke-width": 2, "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", opacity: 0 }, dogLayer)
   );
+  // Lit in world space, outside the facing flip, so the light stays overhead.
+  const dogLit = el("g", { filter: "url(#dogCoat)" }, dogLayer);
+  const dogRoot = el("g", { "data-part": "dog" }, dogLit);
   const hips = el("g", {}, dogRoot);
 
   // Near-side lower legs and paws get a hairline edge so near and far legs
@@ -260,6 +279,7 @@ function createEngine(host, callbacks) {
     el("line", { x1: 0, y1: 0, x2: 0, y2: dims.L2, stroke: color, "stroke-width": dims.W2, "stroke-linecap": "round" }, knee);
     const paw = el("g", { transform: `translate(0 ${dims.L2})` }, knee);
     el("ellipse", { cx: 5, cy: 0, rx: 13, ry: 8, fill: color, ...(edge ? { stroke: EDGE, "stroke-width": 2.5 } : {}) }, paw);
+    if (edge) el("path", { d: TOES, stroke: DETAIL, "stroke-width": 1.6, "stroke-linecap": "round", fill: "none" }, paw);
     // Thigh on top of the lower leg so the knee reads.
     el("line", { x1: 0, y1: 0, x2: 0, y2: dims.L1, stroke: color, "stroke-width": dims.W1, "stroke-linecap": "round" }, top);
     return { top, knee, paw, attach, dims };
@@ -279,26 +299,75 @@ function createEngine(host, callbacks) {
     tailParent = next;
   }
   el("circle", { cx: 0, cy: 2, r: 36, fill: INK }, hips);
-  el("ellipse", { cx: 98, cy: 4, rx: 42, ry: 44, fill: INK }, hips);
-  el("path", { d: "M -4 -33 C 30 -40 64 -44 96 -40 L 100 44 C 76 32 40 26 -4 38 Z", fill: INK }, hips);
+  el("ellipse", { ...CHEST, fill: INK }, hips);
+  el("path", { d: "M -4 -33 C 30 -40 62 -43 92 -35 L 97 46 C 76 32 40 26 -4 38 Z", fill: INK }, hips);
 
   const neck = el("g", {}, hips);
   el("line", { x1: 0, y1: 0, x2: 0, y2: -NECK_LEN + 6, stroke: INK, "stroke-width": 40, "stroke-linecap": "round" }, neck);
-  el("rect", { x: -25, y: -16, width: 50, height: 12, rx: 6, fill: MINT }, neck);
-  el("circle", { cx: 6, cy: -2, r: 7, fill: "#c9f4e3", stroke: "#2f7f63", "stroke-width": 1.5 }, neck);
+  // Seasonal neckwear can wrap a band round the neck with this clip: the neck
+  // plus the chest (which forms the front of the throat), so its ends always
+  // meet the outline.
+  const collarClip = el("clipPath", { id: "dogCollarClip" }, neck);
+  el("rect", { x: -20, y: -70, width: 40, height: 90 }, collarClip);
+  const collarChest = el("ellipse", CHEST, collarClip);
+  // The collar goes round the narrowest part of the neck: exactly as wide as
+  // the neck, so both ends meet the outline, rising from the nape into the
+  // throat just under the jaw. Neckwear replaces it.
+  const collar = el("g", { "data-slot": "collar" }, neck);
+  el("path", { d: "M -20 -23 Q 0 -25.5 20 -33 L 20 -24 Q 0 -16 -20 -13 Z", fill: "url(#dogCollar)" }, collar);
+  el("path", { d: "M -17 -21 Q 0 -23.45 17 -29.5", fill: "none", stroke: "#dcf8ec", "stroke-width": 2.2, "stroke-linecap": "round", opacity: 0.55 }, collar);
+  // The tag hangs straight down from the collar and swings as he trots.
+  const tag = el("g", {}, collar);
+  el("circle", { cx: 0, cy: 0, r: 2.4, fill: "none", stroke: "#2f7f63", "stroke-width": 1.4 }, tag);
+  el("circle", { cx: 0, cy: 7.8, r: 5.8, fill: "#c9f4e3", stroke: "#2f7f63", "stroke-width": 1.4 }, tag);
+  el("circle", { cx: -1.8, cy: 5.9, r: 1.6, fill: "#fff", opacity: 0.75 }, tag);
   const neckSlot = el("g", { "data-slot": "neck" }, neck); // seasonal neckwear goes over the collar
+  // Head: skull at the origin, a brow over the eye, then a deep hound muzzle
+  // with the nose on top and soft flews hanging under it.
   const head = el("g", {}, neck);
+  // The lower jaw swings open from a hinge under the eye, showing the inside of
+  // the mouth (redrawn each frame to fill the gap), a tongue and two canines.
+  // All of that sits behind the lips and is hidden outright while the mouth is
+  // shut, so no red edge shows at the lips.
+  const mouthInside = el("path", { fill: "url(#dogMouth)" }, head);
+  const upperFang = el("path", { d: "M 70 17 L 72.5 23 L 75 17.5 Z", fill: "#f3efe6" }, head);
+  const jaw = el("g", {}, head);
+  el("path", {
+    d: "M 26 13 C 40 15 58 17 70 18 C 77 18.5 78 24 71 25.5 C 56 27.5 30 27 8 25 C 6 20 10 14 26 13 Z",
+    fill: INK,
+  }, jaw);
+  const tongue = el("g", {}, jaw);
+  el("path", {
+    d: "M 30 10.5 C 42 9.2 56 10 64 12.5 C 69 14 70 17.5 66 18.3 C 58 18.2 48 16.2 38 14.4 C 34 13.8 31 12.6 30 10.5 Z",
+    fill: "#e06b80",
+  }, tongue);
+  el("path", { d: "M 36 12.2 C 46 12 56 12.8 63 14.6", fill: "none", stroke: "#b8475c", "stroke-width": 1.1, "stroke-linecap": "round" }, tongue);
+  el("path", { d: "M 63.5 16.6 L 65.8 12 L 68 17 Z", fill: "#f3efe6" }, tongue);
+  const mouthParts = [mouthInside, upperFang, tongue];
+  let mouthShown = null;
   el("circle", { cx: 0, cy: 0, r: 30, fill: INK }, head);
-  el("path", { d: "M 4 -18 C 40 -20 68 -12 80 0 C 84 10 72 20 48 20 L 2 22 Z", fill: INK }, head);
-  el("ellipse", { cx: 80, cy: 0, rx: 10, ry: 8, fill: "#000" }, head);
-  el("ellipse", { cx: 77, cy: -3, rx: 3.5, ry: 2, fill: "#4a4a55" }, head);
-  el("path", { d: "M 34 16 Q 50 19 64 14", fill: "none", stroke: "#2a2a31", "stroke-width": 2.5, "stroke-linecap": "round" }, head);
+  el("path", {
+    d: "M 2 -27 C 12 -29 22 -25 28 -18 C 44 -16 64 -12 80 -10 C 88 -9 92 -1 89 6 C 87 13 82 18 74 18.5 C 64 19 52 16.5 40 15 C 30 14 18 16 6 18 Z",
+    fill: INK,
+  }, head);
+  el("path", { d: "M 40 15 C 52 16.5 64 19 75 18", fill: "none", stroke: DETAIL, "stroke-width": 2.2, "stroke-linecap": "round" }, head);
+  el("path", { d: "M 40 15 q -3 -0.5 -4.5 -3", fill: "none", stroke: DETAIL, "stroke-width": 2, "stroke-linecap": "round" }, head);
+  el("ellipse", { cx: 85, cy: -5, rx: 8.5, ry: 7, fill: "#000" }, head);
+  el("ellipse", { cx: 83, cy: -8.5, rx: 3.6, ry: 1.8, fill: "#5a5a66" }, head);
+  el("path", { d: "M 8 -20 Q 16 -24.5 25 -19.5", fill: "none", stroke: DETAIL, "stroke-width": 2.6, "stroke-linecap": "round" }, head);
   const eye = el("g", {}, head);
-  el("ellipse", { cx: 0, cy: 0, rx: 6.5, ry: 7, fill: "#f4fff9" }, eye);
-  el("circle", { cx: 2, cy: 0.5, r: 4, fill: "#070709" }, eye);
-  el("circle", { cx: 3.5, cy: -2, r: 1.4, fill: "#fff" }, eye);
+  el("ellipse", { cx: 0, cy: 0, rx: 6.8, ry: 7.2, fill: "#f4fff9" }, eye);
+  el("circle", { cx: 2, cy: 0.6, r: 4.7, fill: "#5b3a22" }, eye);
+  el("circle", { cx: 2.3, cy: 0.6, r: 2.8, fill: "#070709" }, eye);
+  el("circle", { cx: 3.9, cy: -1.8, r: 1.6, fill: "#fff" }, eye);
+  el("circle", { cx: 0.5, cy: 2.6, r: 0.8, fill: "#fff", opacity: 0.8 }, eye);
+  // A hound ear with a soft fold, hanging from the back of the skull.
   const ear = el("g", {}, head);
-  el("path", { d: "M -4 0 C -22 2 -30 34 -18 54 C -10 60 2 40 8 8 Z", fill: EAR }, ear);
+  el("path", {
+    d: "M 6 -2 C 14 2 14 14 10 24 C 6 38 0 50 -10 57 C -18 62 -27 56 -27 44 C -27 28 -22 10 -8 0 C -4 -3 2 -4 6 -2 Z",
+    fill: "url(#dogEar)",
+  }, ear);
+  el("path", { d: "M 3 4 C -3 16 -9 30 -13 45", fill: "none", stroke: DETAIL, "stroke-width": 2, "stroke-linecap": "round", opacity: 0.8 }, ear);
   const hatSlot = el("g", { "data-slot": "hat" }, head);
 
   const nearRear = buildLeg(REAR_ATTACH, REAR_LEG, INK, true);
@@ -308,13 +377,23 @@ function createEngine(host, callbacks) {
   // with the hind foot lying forward on the ground. Kept upright in world
   // space and cross-faded with the jointed hind legs as the dog sits.
   const haunch = el("g", { opacity: 0 }, hips);
-  el("ellipse", { cx: 16, cy: 4, rx: 42, ry: 34, transform: "rotate(-16 16 4)", fill: INK, stroke: EDGE, "stroke-width": 2.5 }, haunch);
+  el("ellipse", { cx: 16, cy: 4, rx: 42, ry: 34, transform: "rotate(-16 16 4)", fill: INK }, haunch);
   const hindFoot = el("g", {}, haunch);
   el("line", { x1: -6, y1: 0, x2: 46, y2: 0, stroke: EDGE, "stroke-width": 21, "stroke-linecap": "round" }, hindFoot);
   el("line", { x1: -6, y1: 0, x2: 46, y2: 0, stroke: INK, "stroke-width": 16, "stroke-linecap": "round" }, hindFoot);
   el("ellipse", { cx: 50, cy: 1, rx: 14, ry: 8.5, fill: INK, stroke: EDGE, "stroke-width": 2.5 }, hindFoot);
-  // Re-cover the top of the foot with the thigh so it tucks under the haunch.
+  el("path", { d: TOES, transform: "translate(45 1)", stroke: DETAIL, "stroke-width": 1.6, "stroke-linecap": "round", fill: "none" }, hindFoot);
+  // Re-cover the top of the foot with the thigh so it tucks under the haunch,
+  // then light the front of the thigh (fading out towards the tail) so it
+  // reads against the body.
   el("ellipse", { cx: 16, cy: 4, rx: 40, ry: 32, transform: "rotate(-16 16 4)", fill: INK }, haunch);
+  el("path", {
+    d: "M -24.15 3.77 A 41 33 -16 0 1 56.4 -1.62",
+    fill: "none",
+    stroke: "url(#dogHaunchRim)",
+    "stroke-width": 2,
+    "stroke-linecap": "round",
+  }, haunch);
 
   const nearFront = buildLeg(FRONT_ATTACH, FRONT_LEG, INK, true);
   // Trot: diagonal pairs move together.
@@ -351,6 +430,9 @@ function createEngine(host, callbacks) {
     wagAmp: 0.15,
     ear: 0.1,
     blink: 0,
+    jaw: 0, // 0..1 mouth open
+    chomp: 0, // 0..1 mouth wide open to grab a bone
+    lookUp: 0, // 0..1 head thrown back (howling)
     mouth: [0, 0],
     nose: [0, 0],
     headTop: [0, 0],
@@ -406,9 +488,12 @@ function createEngine(host, callbacks) {
       leg.paw.setAttribute("transform", tf(0, leg.dims.L2, -lower));
     }
 
-    const neckW = P.n + dog.extraNeck + 0.55 * dog.sniff;
-    const headW = P.h + dog.extraHead + dog.tilt + 0.5 * dog.sniff;
+    const neckW = P.n + dog.extraNeck + 0.55 * dog.sniff - 0.3 * dog.lookUp;
+    const headW = P.h + dog.extraHead + dog.tilt + 0.5 * dog.sniff - 0.75 * dog.lookUp;
     neck.setAttribute("transform", tf(SHOULDER[0], SHOULDER[1], neckW - p));
+    collarChest.setAttribute("transform", `rotate(${deg(p - neckW).toFixed(2)}) translate(${-SHOULDER[0]} ${-SHOULDER[1]})`);
+    const swing = 0.35 * Math.sin(dog.phase * 2) * dog.gait + 0.25 * Math.sin(dog.scratchPhase * 2) * dog.scratch;
+    tag.setAttribute("transform", tf(TAG_AT[0], TAG_AT[1], swing - neckW));
     head.setAttribute("transform", tf(0, -NECK_LEN, headW - neckW));
     const S = toRoot(SHOULDER);
     const hp = [S[0] + NECK_LEN * Math.sin(neckW), S[1] - NECK_LEN * Math.cos(neckW)];
@@ -419,13 +504,35 @@ function createEngine(host, callbacks) {
     dog.headTop = [hp[0] + 10, hp[1] - (theme ? 110 : 70)];
 
     eye.setAttribute("transform", `translate(16 -9) scale(1 ${(1 - dog.blink * 0.88).toFixed(3)})`);
+    const shown = dog.jaw > 0.02;
+    if (shown !== mouthShown) {
+      mouthShown = shown;
+      for (const part of mouthParts) part.setAttribute("visibility", shown ? "visible" : "hidden");
+    }
+    const ja = dog.jaw * JAW_MAX;
+    jaw.setAttribute("transform", `rotate(${deg(ja).toFixed(2)} ${JAW_HINGE[0]} ${JAW_HINGE[1]})`);
+    const jp = (x, y) => {
+      const [rx, ry] = rot(x - JAW_HINGE[0], y - JAW_HINGE[1], ja);
+      return `${(JAW_HINGE[0] + rx).toFixed(1)} ${(JAW_HINGE[1] + ry).toFixed(1)}`;
+    };
+    // From inside the muzzle to the front of the flews, a curve set back
+    // between the lips (so the opening reads as a notch, not a slab) to the
+    // tip of the lower jaw, then back just under its top edge (the jaw hides
+    // the overlap, so no gap opens at the corner of the mouth).
+    const [tx, ty] = rot(75 - JAW_HINGE[0], 19.5 - JAW_HINGE[1], ja);
+    const curveX = (79 + JAW_HINGE[0] + tx) / 2 - 12 * dog.jaw;
+    const curveY = (17.5 + JAW_HINGE[1] + ty) / 2;
+    mouthInside.setAttribute(
+      "d",
+      `M 18 8 L 82 8 L 79 17.5 Q ${curveX.toFixed(1)} ${curveY.toFixed(1)} ${jp(75, 19.5)} L ${jp(62, 18.2)} L ${jp(46, 16.6)} L ${jp(30, 14.8)} L ${jp(18, 14)} Z`
+    );
     ear.setAttribute("transform", tf(-6, -20, dog.ear));
     tailRoot.setAttribute("transform", tf(-30, -14, lerp(P.tail, 0.08, dog.tailStiff)));
     const curl = lerp(P.curl, 0, dog.tailStiff);
     const wagAmp = dog.wagAmp * (1 - dog.tailStiff);
     tail.forEach((seg, i) => {
-      const wag = wagAmp * Math.sin(clock * dog.wagSpeed - i * 0.8) * 0.5;
-      seg.setAttribute("transform", `rotate(${deg(curl + wag).toFixed(2)})`);
+      const wag = wagAmp * Math.sin(clock * dog.wagSpeed - i * 0.8 * TAIL_BEND) * 0.5;
+      seg.setAttribute("transform", `rotate(${deg((curl + wag) * TAIL_BEND).toFixed(2)})`);
     });
     const sx = 1 + 0.06 * dog.squash;
     const sy = (1 + 0.07 * dog.turnPulse) * (1 - 0.1 * dog.squash);
@@ -621,6 +728,14 @@ function createEngine(host, callbacks) {
     style: `${FONT}; font-size: 54px`,
   }, fxLayer);
   let bangT = -1;
+  let talks = [];
+  /** Move the mouth with a sound (`delay` lines it up with a delayed one). */
+  const say = (kind, delay = 0) => talks.push({ ...VOICES[kind], t: -delay });
+  /** Bark, yip, woof or howl, mouth and all. */
+  const voice = (kind, opts = {}) => {
+    sfx[kind](opts);
+    say(kind, opts.delay ?? 0);
+  };
   const pop = (char) => {
     bang.textContent = char;
     bang.setAttribute("fill", char === "?" ? "#ffffff" : MINT);
@@ -640,6 +755,7 @@ function createEngine(host, callbacks) {
   // Seasonal hat/neckwear (shared with the winner card) + the scene's own effects.
   hatSlot.innerHTML = THEME_ART[theme]?.hat ?? "";
   neckSlot.innerHTML = THEME_ART[theme]?.neck ?? "";
+  if (THEME_ART[theme]?.neck) collar.remove();
   const swaying = [...dogRoot.querySelectorAll("[data-sway]")].map((node) => {
     const [lean, amp, speed, phase] = node.getAttribute("data-sway").split(" ").map(Number);
     return { node, lean, amp, speed, phase };
@@ -954,6 +1070,7 @@ function createEngine(host, callbacks) {
         const k = easeInOut(t / 0.32);
         dog.extraNeck = 0.25 * k;
         dog.extraHead = 0.35 * k;
+        dog.chomp = k;
       } else {
         if (!this.bone) {
           const b = pick();
@@ -967,6 +1084,7 @@ function createEngine(host, callbacks) {
           sfx.clack(0.85);
           for (let i = 0; i < 6; i++) puff(mx + rand(-30, 30), my + 10, rand(-90, 90), rand(-170, -60));
         }
+        dog.chomp = Math.max(0, 1 - (t - 0.32) / 0.06); // snap shut on it
         const k = Math.min(1, (t - 0.32) / 0.45);
         dog.extraNeck = lerp(0.25, -0.1, easeInOut(k));
         dog.extraHead = lerp(0.35, -0.3, easeInOut(k));
@@ -975,6 +1093,7 @@ function createEngine(host, callbacks) {
       return t >= 0.85;
     },
     end() {
+      dog.chomp = 0;
       dog.extraNeck = 0;
       dog.extraHead = -0.12; // proud, nose up, while it carries the bone
     },
@@ -987,6 +1106,7 @@ function createEngine(host, callbacks) {
       Object.assign(b, { mode: "fly", vx: -dog.facing * rand(360, 520), vy: -rand(700, 820), vr: rand(-18, 18) });
       sfx.whoosh(0.6);
       sfx.wahwah();
+      say("toss");
     });
 
   /** Flip the held bone over to reveal the name. The big moment. */
@@ -1016,6 +1136,9 @@ function createEngine(host, callbacks) {
       dog.wagSpeed = 13;
       dog.wagAmp = 0.35;
       callbacks.current.onLanded?.(theme);
+      // The parent plays sfx.happyBarks(0.12) on landing: a bark, then a yip.
+      say("bark", 0.12);
+      say("yip", 0.32);
     },
   });
 
@@ -1033,7 +1156,7 @@ function createEngine(host, callbacks) {
   const intro = () => [
     call(() => {
       pop("!");
-      sfx.bark();
+      voice("bark");
       dog.wagSpeed = 18;
       dog.wagAmp = 0.45;
       dog.extraHead = 0;
@@ -1042,7 +1165,7 @@ function createEngine(host, callbacks) {
     jump(null, 26, 0.34),
     call(shuffle),
     // Play bow while the bones settle.
-    call(() => sfx.yip({ delay: 0.15 })),
+    call(() => voice("yip", { delay: 0.15 })),
     blend({ dig: 0.55, extraNeck: -0.55, extraHead: -0.65, wiggle: 1 }, 0.3),
     wait(rand(0.9, 1.3)),
     blend({ dig: 0, extraNeck: 0, extraHead: 0, wiggle: 0 }, 0.25),
@@ -1104,7 +1227,7 @@ function createEngine(host, callbacks) {
           call(() => pop("!")),
           wait(1.1),
           blend({ pawUp: 0, tailStiff: 0, extraNeck: 0, extraHead: 0 }, 0.12),
-          call(() => sfx.woof({ gain: 0.6 })),
+          call(() => voice("woof", { gain: 0.6 })),
           jump(stop - 90, 80, 0.45),
           blend({ dig: 1 }, 0.2),
           dig(rand(1.1, 1.5), 3),
@@ -1120,7 +1243,7 @@ function createEngine(host, callbacks) {
           blend({ dig: 0.35, wiggle: 1 }, 0.25),
           wait(0.45),
           blend({ dig: 0, wiggle: 0 }, 0.1),
-          call(() => sfx.woof()),
+          call(() => voice("woof")),
           jump(impact + 40, 190, 0.85, {
             onLand: () => {
               setDogBehindPile(true);
@@ -1138,7 +1261,7 @@ function createEngine(host, callbacks) {
           dig(rand(1.8, 2.4), 0, { rustleAt: impact }),
           grab(mysteryBone),
           turnTo(1),
-          call(() => sfx.yip()),
+          call(() => voice("yip")),
           jump(PILE_X + PILE_HALF + 90, 160, 0.8, { onMid: () => setDogBehindPile(false) }),
         ];
       }
@@ -1163,7 +1286,7 @@ function createEngine(host, callbacks) {
       // Victory lap with the bone before sitting down.
       return [
         turnTo(1),
-        call(() => sfx.yip()),
+        call(() => voice("yip")),
         runTo(SPOT_X + 290, 650),
         skid(),
         turnTo(-1),
@@ -1215,10 +1338,10 @@ function createEngine(host, callbacks) {
     if (petStreak >= 5) {
       // Five quick pets: a happy howl and a flurry of hearts.
       petStreak = 0;
-      sfx.howl();
+      voice("howl");
       for (let i = 0; i < 4; i++) setTimeout(heart, i * 130);
     } else {
-      (Math.random() < 0.5 ? sfx.bark : sfx.yip)();
+      voice(Math.random() < 0.5 ? "bark" : "yip");
       heart();
     }
     dog.wagSpeed = 22;
@@ -1269,7 +1392,9 @@ function createEngine(host, callbacks) {
       tailStiff: 0,
       wiggle: 0,
       air: 0,
+      chomp: 0,
     });
+    talks = [];
     rebuildBones(pending ?? latest);
     pending = null;
   };
@@ -1458,6 +1583,21 @@ function createEngine(host, callbacks) {
       if (dog.blink >= 1) nextBlink = rand(2.5, 5);
     } else dog.blink = Math.max(0, dog.blink - dt * 10);
     dog.squash = Math.max(0, dog.squash - dt * 5);
+    // Mouth: open with each bark, parted around a carried bone, wide to grab.
+    let talk = 0;
+    let look = 0;
+    talks = talks.filter((v) => {
+      v.t += dt;
+      if (v.t < 0) return true;
+      const k = v.t < 0.05 ? v.t / 0.05 : Math.min(1, 1 - (v.t - 0.05 - v.hold) / 0.16);
+      if (k <= 0) return false;
+      talk = Math.max(talk, v.open * k);
+      look = Math.max(look, (v.lookUp ?? 0) * k);
+      return true;
+    });
+    const jawTarget = Math.max(held ? JAW_HOLD + 0.35 * talk : talk, dog.chomp);
+    dog.jaw = lerp(dog.jaw, jawTarget, 1 - Math.exp(-dt * 35));
+    dog.lookUp = lerp(dog.lookUp, look, 1 - Math.exp(-dt * 7));
     const earTarget =
       dog.dig > 0.5 || dog.sniff > 0.5
         ? 0.55

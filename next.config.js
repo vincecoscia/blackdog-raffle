@@ -8,7 +8,7 @@ const nextConfig = {
   },
   // The winner-card route reads these from disk at runtime.
   outputFileTracingIncludes: {
-    "/api/card/*": ["./assets/fonts/**", "./public/assets/black_dog_logo.png"],
+    "/api/card/*": ["./assets/fonts/**"],
   },
 };
 

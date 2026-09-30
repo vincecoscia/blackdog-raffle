@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { signOut, useSession } from "next-auth/react";
 import { LogOutIcon, PlusIcon } from "./icons";
+import Logo from "./Logo";
 
 export default function Nav() {
   const { data: session } = useSession();
@@ -12,16 +13,14 @@ export default function Nav() {
     <header className="sticky top-0 z-40 border-b border-white/6 bg-ink-950/70 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="group flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent-400/60">
-          <Image
-            src="/assets/black_dog_logo.png"
-            alt=""
-            width={34}
-            height={38}
-            priority
-            className="drop-shadow-[0_0_14px_rgb(255_255_255/.25)] transition group-hover:scale-105"
+          <Logo
+            registered={false}
+            className="h-10 w-auto text-ink-50 drop-shadow-[0_0_14px_rgb(255_255_255/.2)] transition group-hover:drop-shadow-[0_0_12px_rgb(119_221_175/.5)] sm:h-11"
           />
-          <span className="font-display text-sm font-extrabold tracking-[0.14em] whitespace-nowrap text-ink-50 uppercase sm:text-base sm:tracking-[0.18em]">
-            Blackdog <span className="text-accent-400">Raffle</span>
+          {/* The wordmark sits low in the lockup; nudge these onto its baseline. */}
+          <span aria-hidden="true" className="h-5 w-px translate-y-0.5 bg-white/15" />
+          <span className="translate-y-1 font-display text-sm font-extrabold tracking-[0.18em] whitespace-nowrap text-accent-400 uppercase sm:text-base">
+            Raffle
           </span>
         </Link>
 

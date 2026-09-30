@@ -3,6 +3,7 @@ import path from "node:path";
 import { ImageResponse } from "next/og";
 import connectDB from "@/db/connection";
 import Raffle from "@/db/models/Raffle";
+import { LOGO_VARIANTS, logoSvg } from "@/lib/brand";
 import { BONE, CARD, cardScene } from "@/lib/card";
 import { isValidId } from "@/lib/data";
 import { fullName } from "@/lib/format";
@@ -20,7 +21,9 @@ const FONTS = [
   },
   { name: "Inter", data: fs.readFileSync(path.join(process.cwd(), "assets", "fonts", "Inter-SemiBold.ttf")), weight: 600, style: "normal" },
 ];
-const LOGO = `data:image/png;base64,${fs.readFileSync(path.join(process.cwd(), "public", "assets", "black_dog_logo.png")).toString("base64")}`;
+const LOGO = `data:image/svg+xml;base64,${Buffer.from(logoSvg({ registered: false })).toString("base64")}`;
+const LOGO_HEIGHT = 56;
+const LOGO_WIDTH = Math.round((LOGO_HEIGHT * LOGO_VARIANTS.lockup.viewBox[2]) / LOGO_VARIANTS.lockup.viewBox[3]);
 
 const INK = "#f4fff9";
 const MUTED = "#a7a7b5";
@@ -75,9 +78,11 @@ export default async function card(req, res) {
         {/* Wordmark */}
         <div style={{ position: "absolute", left: 72, top: 58, display: "flex", alignItems: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
-          <img src={LOGO} width={42} height={45} />
-          <div style={{ display: "flex", marginLeft: 16, fontFamily: "Bricolage", fontSize: 24, letterSpacing: 4, color: INK }}>
-            BLACKDOG&nbsp;<span style={{ color: MINT }}>RAFFLE</span>
+          <img src={LOGO} width={LOGO_WIDTH} height={LOGO_HEIGHT} />
+          {/* The wordmark sits low in the lockup; nudge these onto its baseline. */}
+          <div style={{ width: 2, height: 26, marginLeft: 18, marginTop: 7, background: "rgba(255,255,255,0.18)" }} />
+          <div style={{ display: "flex", marginLeft: 18, marginTop: 8, fontFamily: "Bricolage", fontSize: 22, letterSpacing: 4, color: MINT }}>
+            RAFFLE
           </div>
         </div>
 

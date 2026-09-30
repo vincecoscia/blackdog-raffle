@@ -1,8 +1,8 @@
-import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import { GoogleIcon, Spinner } from "./icons";
+import Logo from "./Logo";
 
 const ERRORS = {
   AccessDenied: "That Google account isn't on the Blackdog list. Try your work email.",
@@ -27,7 +27,7 @@ export default function SignIn() {
 
       <div className="card relative w-full max-w-md animate-fade-up bg-ink-900/80 p-8 text-center backdrop-blur-xl sm:p-10">
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-white/4 ring-1 ring-white/8">
-          <Image src="/assets/black_dog_logo.png" alt="" width={48} height={52} priority />
+          <Logo variant="mark" registered={false} label="" className="h-12 w-auto text-ink-50" />
         </div>
         <p className="eyebrow mt-6">Blackdog Advertising</p>
         <h1 className="mt-2 font-display text-3xl font-extrabold text-ink-50">The Raffle</h1>
