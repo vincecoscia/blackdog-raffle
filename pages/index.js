@@ -5,6 +5,7 @@ import SignIn from "@/components/SignIn";
 import useEmployees from "@/hooks/useEmployees";
 import { getSession } from "@/lib/auth";
 import { getEmployees, getWinCounts } from "@/lib/data";
+import { SHOW_WIN_COUNTS } from "@/lib/features";
 
 export default function Home({ session, employees: initialEmployees, winCounts: initialCounts }) {
   if (!session) return <SignIn />;
@@ -39,6 +40,6 @@ export async function getServerSideProps({ req, res }) {
   const session = await getSession(req, res);
   if (!session) return { props: { session: null } };
 
-  const [employees, winCounts] = await Promise.all([getEmployees(), getWinCounts()]);
+  const [employees, winCounts] = await Promise.all([getEmployees(), SHOW_WIN_COUNTS ? getWinCounts() : {}]);
   return { props: { session, employees, winCounts } };
 }

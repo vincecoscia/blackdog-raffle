@@ -2,6 +2,7 @@ import Link from "next/link";
 import Avatar from "./Avatar";
 import DrawToggle from "./DrawToggle";
 import { TrashIcon, TrophyIcon } from "./icons";
+import { SHOW_WIN_COUNTS } from "@/lib/features";
 import { fullName } from "@/lib/format";
 
 export default function EmployeeCard({ employee, wins = 0, saving, onToggle, onDelete, style }) {
@@ -33,7 +34,7 @@ export default function EmployeeCard({ employee, wins = 0, saving, onToggle, onD
           >
             {fullName(employee)}
           </Link>
-          {wins > 0 && (
+          {SHOW_WIN_COUNTS && wins > 0 && (
             <span
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-400/10 px-1.5 py-0.5 text-[10px] font-bold text-accent-300"
               title={`${wins} ${wins === 1 ? "win" : "wins"}`}

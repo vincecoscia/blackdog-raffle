@@ -175,7 +175,7 @@ export default function Employees({ employees, savingIds, winCounts = {}, onTogg
         danger
         icon={<TrashIcon size={20} />}
         title={deleting ? `Remove ${fullName(deleting)}?` : ""}
-        description="Their profile and win history will be permanently deleted. This can't be undone."
+        description="Their profile will be permanently deleted. This can't be undone."
         confirmLabel="Remove"
       />
     </section>
