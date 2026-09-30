@@ -17,15 +17,16 @@ sign-in) and MongoDB via Mongoose.
   shuffles the pile and plays one of six random routines (dig, around the
   back, fake-out, sniffer, cannonball, zoomies); the dog brings back a mystery
   "?" bone and flips it over to reveal the name. Nothing on screen hints at the
-  winner before the flip. Sound (drumroll, scratches, fanfare) is synthesised
+  winner before the flip. Sound (suspense music, scratches, fanfare) is synthesised
   with the Web Audio API and can be muted; `prefers-reduced-motion` gets a
   simple name shuffle instead.
 - **Sound** ([lib/sound.js](lib/sound.js)) — real recorded barks, whines, a
   howl, panting, wooden bone clacks and paw steps (public domain; see
   [public/sounds/CREDITS.md](public/sounds/CREDITS.md)) in one ~130 KB sprite
-  that preloads in the background, plus synthesised effects (drumroll that
-  speeds up to the reveal, crash, whooshes, skids, sad trombone) and a music
-  sting per season. Between draws the dog can be petted (click it; five quick
+  that preloads in the background, plus synthesised effects (whooshes, skids,
+  sad trombone), suspense while the dog searches (quiet plucked "sneaky" music
+  by default; a soft swell or a soft drumroll can be picked on `/sounds`) and
+  a music sting per season. Between draws the dog can be petted (click it; five quick
   pets for a howl) and bones poked. `/sounds` is an unlisted sound board for
   auditioning everything; `python scripts/build-sounds.py` rebuilds the sprite
   (needs ffmpeg, numpy and scipy).

@@ -1154,7 +1154,7 @@ function createEngine(host, callbacks) {
       blend({ sit: 1, extraHead: 0 }, 0.4),
       call(() => {
         camMode = "present";
-        callbacks.current.onSuspense?.("climax"); // drumroll at full tilt
+        callbacks.current.onSuspense?.("climax"); // suspense builds to its peak
       }),
       wait(1.0),
       flip(),

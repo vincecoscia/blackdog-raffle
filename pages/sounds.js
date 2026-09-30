@@ -5,18 +5,24 @@ import { ArrowLeftIcon, VolumeIcon, VolumeOffIcon } from "@/components/icons";
 import { getSession } from "@/lib/auth";
 import {
   CLIP_NAMES,
+  getSuspenseStyle,
   isSoundEnabled,
   isSoundEnabledOnServer,
   playClip,
   playCrash,
   playFanfare,
+  playRevealHit,
   playWinnerSting,
   setSoundEnabled,
+  setSuspenseStyle,
   sfx,
   startDrumroll,
+  startSuspense,
   subscribeSound,
+  subscribeSuspenseStyle,
   unlockAudio,
   STING_THEMES,
+  SUSPENSE_STYLES,
 } from "@/lib/sound";
 
 // Where each recorded clip comes from (all CC0 — see public/sounds/CREDITS.md).
@@ -49,7 +55,9 @@ const SYNTH = [
   { label: "Sniff", play: () => sfx.sniff() },
   { label: "Bone avalanche (cannonball)", play: () => sfx.avalanche() },
   { label: "Happy barks (reveal)", play: () => sfx.happyBarks() },
+  { label: "Reveal chime", play: () => playRevealHit() },
   { label: "Cymbal crash", play: () => playCrash() },
+  { label: "Loud drumroll (old)", play: () => oldDrumroll() },
   { label: "Fanfare (brand look)", play: () => playFanfare() },
 ];
 
@@ -65,42 +73,82 @@ const THEME_LABELS = {
   autumn: "Autumn · guitar",
 };
 
+function oldDrumroll() {
+  const stop = startDrumroll();
+  setTimeout(() => stop.climax(), 3000);
+  setTimeout(() => stop(true), 4000);
+}
+
+const defaultStyle = () => "music";
+
 /**
  * Sound board: every sound in the raffle, playable on its own, plus the whole
  * reveal sequence per season. Not linked from the app — for tuning.
  */
 export default function Sounds() {
   const soundOn = useSyncExternalStore(subscribeSound, isSoundEnabled, isSoundEnabledOnServer);
-  const [playingReveal, setPlayingReveal] = useState(null);
+  const style = useSyncExternalStore(subscribeSuspenseStyle, getSuspenseStyle, defaultStyle);
+  // What's playing: a theme's reveal ("reveal:none") or a style preview ("style:music").
+  const [playing, setPlaying] = useState(null);
   const timers = useRef([]);
+  const stopSuspense = useRef(null);
 
   const play = (fn) => {
     unlockAudio();
     fn();
   };
 
-  const drumroll = () => {
-    const stop = startDrumroll();
-    timers.current.push(setTimeout(() => stop.climax(), 3000));
-    timers.current.push(setTimeout(() => stop(true), 4000));
-  };
-
-  /** The end of a draw: drumroll, climax, crash + barks + sting, then panting. */
-  const reveal = (theme) => {
+  /** Stop whatever sequence is running, then start `suspenseStyle` and run `steps` ([ms, fn]). */
+  const sequence = (id, suspenseStyle, steps, length) => {
     unlockAudio();
     timers.current.forEach(clearTimeout);
-    setPlayingReveal(theme);
-    const stop = startDrumroll();
-    const at = (ms, fn) => timers.current.push(setTimeout(fn, ms));
-    at(3000, () => stop.climax());
-    at(4000, () => {
-      stop(true);
-      sfx.happyBarks(0.12);
-    });
-    at(4180, () => playWinnerSting(theme === "none" ? null : theme));
-    at(5900, () => sfx.pant());
-    at(8200, () => setPlayingReveal(null));
+    timers.current = [];
+    stopSuspense.current?.(false);
+    setPlaying(id);
+    const stop = startSuspense(suspenseStyle);
+    stopSuspense.current = stop;
+    for (const [ms, fn] of steps) timers.current.push(setTimeout(() => fn(stop), ms));
+    timers.current.push(
+      setTimeout(() => {
+        stopSuspense.current = null;
+        setPlaying(null);
+      }, length)
+    );
   };
+
+  /** A search about as long as a real one, the last-second build, then the reveal hit. */
+  const preview = (id) => {
+    setSuspenseStyle(id);
+    sequence(
+      `style:${id}`,
+      id,
+      [
+        [8000, (stop) => stop.climax()],
+        [9200, (stop) => stop(true)],
+      ],
+      10600
+    );
+  };
+
+  /** The end of a draw: suspense, climax, reveal hit + barks + sting, then panting. */
+  const reveal = (theme) =>
+    sequence(
+      `reveal:${theme}`,
+      style,
+      [
+        [4000, (stop) => stop.climax()],
+        [
+          5200,
+          (stop) => {
+            stop(true);
+            sfx.happyBarks(0.12);
+          },
+        ],
+        [5380, () => playWinnerSting(theme === "none" ? null : theme)],
+        [7100, () => sfx.pant()],
+      ],
+      9400
+    );
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -128,15 +176,48 @@ export default function Sounds() {
         </button>
       </div>
 
-      <Section title="The whole reveal, by season" hint="About 8 seconds: drumroll → climax → crash, barks and the season's music → panting.">
+      <Section
+        title="While the dog searches"
+        hint="Click one to hear about 10 seconds of it: the search, the last-second build and the reveal. The one you pick is used for draws in this browser."
+      >
+        <div role="radiogroup" aria-label="Suspense style" className="grid gap-2 sm:grid-cols-3">
+          {SUSPENSE_STYLES.map((st) => (
+            <button
+              key={st.id}
+              type="button"
+              role="radio"
+              aria-checked={style === st.id}
+              onClick={() => preview(st.id)}
+              className={`card flex flex-col items-start px-4 py-3 text-left transition hover:border-accent-400/40 ${
+                style === st.id ? "border-accent-400/60 bg-accent-400/8" : ""
+              }`}
+            >
+              <span className="flex w-full items-center justify-between gap-2 font-display text-sm font-bold text-ink-50">
+                {st.label}
+                {playing === `style:${st.id}` ? (
+                  <span className="text-[11px] font-semibold text-accent-300">Playing…</span>
+                ) : (
+                  style === st.id && <span className="text-[11px] font-semibold text-accent-300">Selected</span>
+                )}
+              </span>
+              <span className="mt-1 text-xs leading-snug text-ink-400">{st.hint}</span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="The whole reveal, by season"
+        hint="About 9 seconds: the end of the search (in the style picked above) → the reveal, barks and the season's music → panting."
+      >
         <div className="grid gap-2 sm:grid-cols-3">
           {["none", ...STING_THEMES].map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => reveal(t)}
-              disabled={playingReveal !== null}
-              className={`btn justify-start ${playingReveal === t ? "btn-primary" : "btn-secondary"}`}
+              disabled={playing !== null}
+              className={`btn justify-start ${playing === `reveal:${t}` ? "btn-primary" : "btn-secondary"}`}
             >
               {THEME_LABELS[t] ?? t}
             </button>
@@ -144,7 +225,7 @@ export default function Sounds() {
         </div>
       </Section>
 
-      <Section title="Just the music, by season" hint="What plays after the crash and the happy barks.">
+      <Section title="Just the music, by season" hint="What plays after the reveal hit and the happy barks.">
         <Grid>
           {["none", ...STING_THEMES].map((t) => (
             <Pad
@@ -154,7 +235,6 @@ export default function Sounds() {
               onClick={() => play(() => playWinnerSting(t === "none" ? null : t))}
             />
           ))}
-          <Pad label="Drumroll" sub="3s build, 1s climax, crash" onClick={() => play(drumroll)} />
         </Grid>
       </Section>
 

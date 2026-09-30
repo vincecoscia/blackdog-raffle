@@ -17,7 +17,7 @@ import {
   prefetchSounds,
   setSoundEnabled,
   sfx,
-  startDrumroll,
+  startSuspense,
   subscribeSound,
   unlockAudio,
 } from "@/lib/sound";
@@ -73,7 +73,7 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
     onWinnerRef.current = onWinner;
   }, [onWinner]);
 
-  // Never leave a drumroll running if the component goes away mid-draw.
+  // Never leave suspense music running if the component goes away mid-draw.
   useEffect(() => () => stopRoll.current?.(false), []);
 
   // Fetch the recorded sounds once the page has settled, so the first bark is instant.
@@ -103,19 +103,19 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
     );
   }, [renderer]);
 
-  // The scene calls this when the search starts (drumroll until the reveal),
-  // and with "climax" for the last second before the bone is flipped.
+  // The scene calls this when the search starts (suspense music until the
+  // reveal), and with "climax" for the last second before the bone is flipped.
   const suspense = useCallback((state) => {
     if (state === "climax") return stopRoll.current?.climax();
     stopRoll.current?.(false);
-    stopRoll.current = state ? startDrumroll() : null;
+    stopRoll.current = state ? startSuspense() : null;
   }, []);
 
   // Called by whichever visual is running, the moment the winner is revealed
   // (with the seasonal skin that's showing, if any).
   const landed = useCallback((theme = null) => {
     if (stopRoll.current) {
-      stopRoll.current(true); // finish the drumroll on a cymbal crash
+      stopRoll.current(true); // end the suspense on its reveal hit
       stopRoll.current = null;
     } else {
       playThunk();
