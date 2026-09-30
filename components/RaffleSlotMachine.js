@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "react-toastify";
 import Avatar from "./Avatar";
@@ -19,18 +19,27 @@ import {
   unlockAudio,
 } from "@/lib/sound";
 
-const ROW_H = 76; // px per row
-const VISIBLE = 5; // rows in the window (odd, so one sits dead centre)
-const CENTER_OFFSET = (ROW_H * (VISIBLE - 1)) / 2;
+// ---- drum geometry ----------------------------------------------------------
+// Rows are laid out around a cylinder: SLOTS rows per revolution, so each row
+// sits STEP degrees from the next at RADIUS px from the axis. Spinning the reel
+// is then a single rotateX on the drum; the rows themselves never move.
+export const ROW_H = 76; // px per row (drives the radius)
+const SLOTS = 16;
+const STEP = 360 / SLOTS; // 22.5°
+const RADIUS = Math.round(ROW_H / 2 / Math.tan(Math.PI / SLOTS)); // ≈191px
+const ARC = 4; // rows kept visible each side of the payline (±90°)
+const WINDOW_H = 380;
 const IDLE_SPEED = 14; // px/s slow drift while nothing is happening
 const MIN_TRAVEL_ROWS = 80;
 const MIN_TRAVEL_ROWS_REDUCED = 6;
 
-// The reel idles within its second cycle of rows (third, for a one-person
-// strip) so there are always rows above the payline as well as below it.
-const baseCycles = (len) => (len >= 2 ? 1 : 2);
+const angleFor = (p) => (p / ROW_H) * STEP;
+
+// The reel idles a whole number of cycles into the strip so there are always
+// ARC rows above the payline as well as below it.
+const baseCycles = (len) => Math.max(1, Math.ceil(ARC / len));
 const basePos = (len) => baseCycles(len) * len * ROW_H;
-const minRepeats = (len) => (len ? baseCycles(len) + 1 + Math.ceil((VISIBLE + 2) / len) : 0);
+const minRepeats = (len) => (len ? baseCycles(len) + 1 + Math.ceil((ARC + 2) / len) : 0);
 const wrap = (p, len) => {
   const cycle = len * ROW_H;
   const base = basePos(len);
@@ -38,11 +47,10 @@ const wrap = (p, len) => {
 };
 
 /**
- * The raffle reel. A long strip of names scrolls vertically behind a window;
- * the draw itself happens on the server, and the reel is animated to land on
- * whoever the server picked. The animation runs in one requestAnimationFrame
- * loop that writes `transform` straight to the DOM — React never re-renders
- * mid-spin.
+ * The raffle reel: a 3D drum of names. The draw itself happens on the server,
+ * and the drum is animated to land on whoever the server picked. Per frame the
+ * only DOM write is the drum's rotation (compositor-only); rows outside the
+ * front arc are hidden and swapped in one at a time as the drum turns.
  */
 export default function RaffleSlotMachine({ employees, onWinner }) {
   const strip = useMemo(() => buildStrip(employees), [employees]);
@@ -54,15 +62,14 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   const [reveal, setReveal] = useState(null);
   const soundOn = useSyncExternalStore(subscribeSound, isSoundEnabled, isSoundEnabledOnServer);
 
-  const stripEl = useRef(null);
-  const clipEl = useRef(null);
+  const drumEl = useRef(null);
   const windowEl = useRef(null);
+  const flashEl = useRef(null);
   const pos = useRef(basePos(strip.length)); // px along the (conceptually infinite) strip
   const phaseRef = useRef("idle");
   const motion = useRef(null);
   const raf = useRef(0);
   const lastRow = useRef(0);
-  const lastBlur = useRef(0);
   const lastTs = useRef(0);
   const reduced = useRef(false);
   const onWinnerRef = useRef(onWinner);
@@ -86,8 +93,23 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   }, []);
 
   const render = useCallback(() => {
-    if (stripEl.current) {
-      stripEl.current.style.transform = `translate3d(0, ${CENTER_OFFSET - pos.current}px, 0)`;
+    if (drumEl.current) {
+      drumEl.current.style.transform = `translateZ(${-RADIUS}px) rotateX(${angleFor(pos.current).toFixed(3)}deg)`;
+    }
+  }, []);
+
+  /**
+   * Only rows within ARC of the payline are shown; everything else is hidden so
+   * rows sharing a slot angle never overlap. `full` re-scans every row (after
+   * the list changes or the position jumps); otherwise only the edge moves.
+   */
+  const syncVisibility = useCallback((center, full = false) => {
+    if (!drumEl.current) return;
+    const count = drumEl.current.childElementCount;
+    const from = full ? 0 : Math.max(0, center - ARC - 2);
+    const to = full ? count - 1 : Math.min(count - 1, center + ARC + 2);
+    for (let i = from; i <= to; i++) {
+      drumEl.current.children[i].style.visibility = Math.abs(i - center) <= ARC ? "visible" : "";
     }
   }, []);
 
@@ -95,19 +117,46 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   const rebase = useCallback(
     (len) => {
       pos.current = wrap(pos.current, len);
+      lastRow.current = Math.round(pos.current / ROW_H);
       render();
+      syncVisibility(lastRow.current, true);
     },
-    [render]
+    [render, syncVisibility]
   );
+
+  const rows = useMemo(() => {
+    const out = [];
+    for (let r = 0; r < repeats; r++) {
+      for (let i = 0; i < activeStrip.length; i++) {
+        out.push({ index: r * activeStrip.length + i, employee: activeStrip[i] });
+      }
+    }
+    return out;
+  }, [activeStrip, repeats]);
+
+  // Whenever the row list changes, re-establish which rows are on the front arc.
+  useLayoutEffect(() => {
+    syncVisibility(Math.round(pos.current / ROW_H), true);
+  }, [rows, syncVisibility]);
 
   const setSpeedFx = useCallback((velocity, vmax) => {
     const s = vmax ? Math.min(1, velocity / vmax) : 0;
     windowEl.current?.style.setProperty("--speed", s.toFixed(2));
-    const blur = reduced.current ? 0 : Math.min(4, velocity / 480);
-    if (Math.abs(blur - lastBlur.current) > 0.25 && clipEl.current) {
-      clipEl.current.style.filter = blur < 0.3 ? "" : `blur(${blur.toFixed(1)}px)`;
-      lastBlur.current = blur;
-    }
+  }, []);
+
+  /** Screen flash + a physical kick to the housing as the reel hits its stop. */
+  const landingFx = useCallback(() => {
+    if (reduced.current) return;
+    flashEl.current?.animate([{ opacity: 0.55 }, { opacity: 0 }], { duration: 650, easing: "ease-out" });
+    windowEl.current?.animate(
+      [
+        { transform: "translateY(0)" },
+        { transform: "translateY(7px)", offset: 0.3 },
+        { transform: "translateY(-3px)", offset: 0.65 },
+        { transform: "translateY(0)" },
+      ],
+      { duration: 420, easing: "ease-out" }
+    );
   }, []);
 
   // ---- the animation loop -------------------------------------------------
@@ -117,10 +166,10 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
       const dt = lastTs.current ? Math.min(0.05, (ts - lastTs.current) / 1000) : 0;
       lastTs.current = ts;
       const m = motion.current;
+      let velocity = 0;
 
       if (m) {
         const t = (ts - m.startedAt) / 1000;
-        let velocity = 0;
 
         if (t < m.plan.duration) {
           pos.current = m.startPos + m.plan.positionAt(t);
@@ -130,6 +179,7 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
           if (!m.hit) {
             m.hit = true;
             playThunk();
+            landingFx();
             setTimeout(() => {
               celebrate();
               playFanfare();
@@ -146,23 +196,24 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             setTimeout(() => setReveal(m.result), 350);
           }
         }
-
         setSpeedFx(velocity, m.plan.vmax);
-        const row = Math.round(pos.current / ROW_H);
-        if (row !== lastRow.current) {
-          lastRow.current = row;
-          playTick(Math.min(1, velocity / m.plan.vmax));
-        }
       } else if (phaseRef.current === "idle" && L > 0) {
         if (!reduced.current) pos.current += IDLE_SPEED * dt;
         pos.current = wrap(pos.current, L);
+      }
+
+      const row = Math.round(pos.current / ROW_H);
+      if (row !== lastRow.current) {
+        lastRow.current = row;
+        syncVisibility(row);
+        if (m) playTick(Math.min(1, velocity / m.plan.vmax));
       }
 
       render();
     };
     raf.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf.current);
-  }, [L, render, setSpeedFx]);
+  }, [L, landingFx, render, setSpeedFx, syncVisibility]);
 
   // ---- drawing --------------------------------------------------------------
   const draw = useCallback(async () => {
@@ -199,21 +250,20 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
 
     // Commit enough rows synchronously so the DOM exists before the first frame.
     flushSync(() => {
-      setFrozen({ strip: stripNow, repeats: Math.ceil((landingIdx + VISIBLE + 2) / len) });
+      setFrozen({ strip: stripNow, repeats: Math.ceil((landingIdx + ARC + 2) / len) });
       setLandedIdx(landingIdx);
     });
-    render();
+    rebase(len);
 
     const plan = planMotion({
       distance: targetPos - pos.current,
       v0: isReduced ? 0 : IDLE_SPEED,
       reduced: isReduced,
     });
-    lastRow.current = Math.round(pos.current / ROW_H);
     motion.current = { plan, startPos: pos.current, targetPos, startedAt: performance.now(), result, hit: false };
     phaseRef.current = "spinning";
     setPhase("spinning");
-  }, [activeStrip, busy, players, rebase, render, repeats, strip]);
+  }, [activeStrip, busy, players, rebase, repeats, strip]);
 
   // After the reveal closes the reel stays parked on the winner (no idle
   // drift) until the next draw.
@@ -232,16 +282,6 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
       playTick(0.2);
     }
   };
-
-  const rows = useMemo(() => {
-    const out = [];
-    for (let r = 0; r < repeats; r++) {
-      for (let i = 0; i < activeStrip.length; i++) {
-        out.push({ index: r * activeStrip.length + i, employee: activeStrip[i] });
-      }
-    }
-    return out;
-  }, [activeStrip, repeats]);
 
   const buttonLabel = {
     idle: "Draw a winner",
@@ -277,11 +317,11 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             </button>
           </div>
 
-          {/* The window */}
+          {/* The window onto the drum */}
           <div
             ref={windowEl}
-            className="relative mt-5 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 [--speed:0]"
-            style={{ height: ROW_H * VISIBLE }}
+            className="reel-window relative mt-5 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 [--speed:0]"
+            style={{ height: WINDOW_H }}
           >
             {L === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
@@ -290,29 +330,34 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
                 <p className="mt-1 text-sm text-ink-500">Flip teammates into the draw below to get the reel spinning.</p>
               </div>
             ) : (
-              <div ref={clipEl} className="reel-mask absolute inset-0">
-                <ul
-                  ref={stripEl}
-                  className="absolute inset-x-0 top-0 m-0 list-none p-0 will-change-transform"
-                  style={{ transform: `translate3d(0, ${CENTER_OFFSET - basePos(L)}px, 0)` }}
-                >
-                  {rows.map(({ index, employee }) => (
-                    <li
-                      key={index}
-                      data-landed={index === landedIdx && phase === "landed" ? "" : undefined}
-                      className="reel-row flex items-center gap-4 px-5 sm:px-8"
-                      style={{ height: ROW_H }}
-                    >
-                      <Avatar employee={employee} size={44} priority className="reel-avatar" />
-                      <span className="truncate font-display text-xl font-bold sm:text-2xl">{fullName(employee)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ul
+                ref={drumEl}
+                className="reel-drum m-0 list-none p-0"
+                style={{ transform: `translateZ(${-RADIUS}px) rotateX(${angleFor(basePos(L)).toFixed(3)}deg)` }}
+              >
+                {rows.map(({ index, employee }) => (
+                  <li
+                    key={index}
+                    data-landed={index === landedIdx && phase === "landed" ? "" : undefined}
+                    className="reel-row flex items-center gap-4 px-5 sm:px-8"
+                    style={{
+                      height: ROW_H,
+                      marginTop: -ROW_H / 2,
+                      transform: `rotateX(${-index * STEP}deg) translateZ(${RADIUS}px)`,
+                    }}
+                  >
+                    <Avatar employee={employee} size={44} priority className="reel-avatar" />
+                    <span className="truncate font-display text-xl font-bold sm:text-2xl">{fullName(employee)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
 
             {L > 0 && (
               <>
+                {/* Cylinder shading + a glass highlight across the drum. */}
+                <div aria-hidden="true" className="reel-shade pointer-events-none absolute inset-0" />
+                <div aria-hidden="true" className="reel-gloss pointer-events-none absolute inset-0" />
                 {/* Payline: glows brighter the faster the reel spins (see --speed). */}
                 <div
                   aria-hidden="true"
@@ -327,7 +372,9 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
                   aria-hidden="true"
                   className="pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 border-y-9 border-r-12 border-y-transparent border-r-accent-400 drop-shadow-[0_0_8px_rgb(119_221_175/.8)]"
                 />
-                <div aria-hidden="true" className="pointer-events-none absolute inset-0 shadow-[inset_0_0_60px_rgb(0_0_0/.7)]" />
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 shadow-[inset_0_0_60px_rgb(0_0_0/.75)]" />
+                {/* Landing flash (driven by the Web Animations API). */}
+                <div ref={flashEl} aria-hidden="true" className="pointer-events-none absolute inset-0 bg-accent-200 opacity-0" />
               </>
             )}
           </div>
