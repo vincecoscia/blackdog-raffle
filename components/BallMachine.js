@@ -4,7 +4,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { initials } from "@/lib/format";
+import { avatarHue, fullName, initials } from "@/lib/format";
 
 /**
  * The lottery ball machine: a glass globe of balls (one per teammate) on a
@@ -345,11 +345,15 @@ function createEngine(host, callbacks) {
   let balls = [];
   let pendingParticipants = null;
 
-  const makeBall = (p, i) => {
-    const mint = i % 3 === 1;
-    const tex = track(labelTexture(initials(p), mint ? "#77ddaf" : "#f4f4f6", "#0d0d11"));
+  // Same display face the rest of the app uses (next/font exposes it on :root).
+  const fontFamily =
+    getComputedStyle(document.documentElement).getPropertyValue("--font-bricolage").trim() ||
+    "Inter, system-ui, sans-serif";
+
+  const makeBall = (p) => {
+    const tex = track(ballTexture(p, fontFamily));
     const mat = track(
-      new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.3, metalness: 0.02, clearcoat: 0.6, clearcoatRoughness: 0.2 })
+      new THREE.MeshPhysicalMaterial({ map: tex, roughness: 0.28, metalness: 0.02, clearcoat: 0.7, clearcoatRoughness: 0.18 })
     );
     const mesh = new THREE.Mesh(ballGeo, mat);
     // Start scattered in the lower half of the globe.
@@ -378,9 +382,19 @@ function createEngine(host, callbacks) {
     balls = [];
   };
 
+  let latestList = null;
   const buildBalls = (list) => {
     clearBalls();
-    balls = list.map(makeBall);
+    balls = list.map((p) => makeBall(p));
+  };
+  // Wait for the web font so the initials on the balls use the display face.
+  const buildBallsWhenReady = (list) => {
+    latestList = list;
+    const go = () => {
+      if (latestList === list && state.mode === "idle") buildBalls(list);
+    };
+    if (document.fonts?.status === "loaded") go();
+    else document.fonts?.ready.then(go) ?? go();
   };
 
   // ---- state machine -------------------------------------------------------
@@ -396,9 +410,8 @@ function createEngine(host, callbacks) {
 
   const selectWinner = (ball) => {
     state.winner = ball;
-    ball.mat.color.set(ACCENT);
     ball.mat.emissive.set(ACCENT);
-    ball.mat.emissiveIntensity = 0.1;
+    ball.mat.emissiveIntensity = 0.07;
   };
 
   const deselectWinner = () => {
@@ -422,7 +435,7 @@ function createEngine(host, callbacks) {
     state.blower = 0.12;
     moveCamera(camHome, 0.9);
     if (pendingParticipants) {
-      buildBalls(pendingParticipants);
+      buildBallsWhenReady(pendingParticipants);
       pendingParticipants = null;
     }
   };
@@ -431,7 +444,7 @@ function createEngine(host, callbacks) {
     if (state.mode !== "idle") reset();
     let ball = balls.find((b) => b.id === winner._id);
     if (!ball) {
-      ball = makeBall(winner, balls.length);
+      ball = makeBall(winner);
       balls.push(ball);
     }
     state.pendingWinner = ball;
@@ -440,7 +453,7 @@ function createEngine(host, callbacks) {
   };
 
   const setParticipants = (list) => {
-    if (state.mode === "idle") buildBalls(list);
+    if (state.mode === "idle") buildBallsWhenReady(list);
     else pendingParticipants = list;
   };
 
@@ -554,8 +567,8 @@ function createEngine(host, callbacks) {
       }
     } else if (mode === "settle") {
       const k = Math.min(1, t / 0.5);
-      halo.material.opacity = 0.35 * k;
-      winnerLight.intensity = 1.6 * k;
+      halo.material.opacity = 0.3 * k;
+      winnerLight.intensity = 1.2 * k;
       if (t >= SETTLE_SECONDS) {
         const b = state.winner;
         b.kinematic = true;
@@ -585,7 +598,7 @@ function createEngine(host, callbacks) {
         state.mode = "present";
         state.t = 0;
         cupRim.material.emissiveIntensity = 1.1;
-        winnerLight.intensity = 0.4;
+        winnerLight.intensity = 0.12;
         callbacks.current.onLanded?.();
       }
     } else if (mode === "present") {
@@ -593,7 +606,7 @@ function createEngine(host, callbacks) {
       const b = state.winner;
       b.mesh.position.y = CUP_Y + Math.sin(t * 2.2) * 0.008;
       b.mesh.quaternion.slerp(identity, 0.05);
-      halo.material.opacity = 0.16 + Math.sin(t * 3) * 0.04;
+      halo.material.opacity = 0.09 + Math.sin(t * 3) * 0.03;
     } else if (mode === "idle") {
       state.blower = 0.12;
     }
@@ -666,7 +679,7 @@ function createEngine(host, callbacks) {
   };
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.45, 0.85);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.45, 0.9);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
@@ -703,36 +716,81 @@ function createEngine(host, callbacks) {
 // Textures
 // ---------------------------------------------------------------------------
 
-/** 2:1 sphere texture with the initials printed twice, on opposite faces. */
-function labelTexture(text, bg, fg) {
+const TEX_W = 512;
+const TEX_H = 256;
+const STICKER_R = 52;
+
+/**
+ * 2:1 sphere texture for one teammate: the ball is a pastel tint of their
+ * avatar hue, with their roster icon (gradient disc + initials, or their
+ * photo once it loads) printed as a badge on opposite faces.
+ */
+function ballTexture(p, fontFamily) {
+  const name = fullName(p) || "Teammate";
+  const hue = avatarHue(name);
+  const text = initials(p);
   const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 128;
+  c.width = TEX_W;
+  c.height = TEX_H;
   const ctx = c.getContext("2d");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, 256, 128);
-  // Soft shading band so the ball reads as round even on the flat colour.
-  const grad = ctx.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, "rgba(0,0,0,0.18)");
-  grad.addColorStop(0.5, "rgba(255,255,255,0.06)");
-  grad.addColorStop(1, "rgba(0,0,0,0.22)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 256, 128);
-  ctx.fillStyle = fg;
-  ctx.font = `800 ${text.length > 2 ? 44 : 60}px Inter, system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  for (const x of [64, 192]) {
+
+  ctx.fillStyle = `hsl(${hue} 46% 80%)`;
+  ctx.fillRect(0, 0, TEX_W, TEX_H);
+  // Poles a touch darker so the ball reads as round even in flat light.
+  const band = ctx.createLinearGradient(0, 0, 0, TEX_H);
+  band.addColorStop(0, "rgba(0,0,0,0.22)");
+  band.addColorStop(0.5, "rgba(255,255,255,0.08)");
+  band.addColorStop(1, "rgba(0,0,0,0.26)");
+  ctx.fillStyle = band;
+  ctx.fillRect(0, 0, TEX_W, TEX_H);
+
+  const centres = [TEX_W * 0.25, TEX_W * 0.75];
+  const drawBadge = (x) => {
     ctx.beginPath();
-    ctx.arc(x, 64, 44, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(13,13,17,0.3)";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.fillText(text, x, 67);
-  }
+    ctx.arc(x, TEX_H / 2, STICKER_R + 6, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.fill();
+    const g = ctx.createLinearGradient(x - STICKER_R, TEX_H / 2 - STICKER_R, x + STICKER_R, TEX_H / 2 + STICKER_R);
+    g.addColorStop(0, `hsl(${hue} 55% 42%)`);
+    g.addColorStop(1, `hsl(${(hue + 40) % 360} 60% 28%)`);
+    ctx.beginPath();
+    ctx.arc(x, TEX_H / 2, STICKER_R, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `800 ${text.length > 2 ? 30 : 38}px ${fontFamily}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x, TEX_H / 2 + 2);
+  };
+  centres.forEach(drawBadge);
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
+
+  // Photo, if they have one and the host allows cross-origin use.
+  const src = p.imageURL?.trim();
+  if (src) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - side) / 2;
+      const sy = (img.naturalHeight - side) / 2;
+      for (const x of centres) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, TEX_H / 2, STICKER_R, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, sx, sy, side, side, x - STICKER_R, TEX_H / 2 - STICKER_R, STICKER_R * 2, STICKER_R * 2);
+        ctx.restore();
+      }
+      tex.needsUpdate = true;
+    };
+    img.src = src;
+  }
   return tex;
 }
 

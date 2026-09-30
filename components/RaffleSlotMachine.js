@@ -45,7 +45,10 @@ function detectRenderer() {
  */
 export default function RaffleSlotMachine({ employees, onWinner }) {
   const participants = useMemo(
-    () => employees.filter((e) => e.entries > 0).map(({ _id, firstName, lastName }) => ({ _id, firstName, lastName })),
+    () =>
+      employees
+        .filter((e) => e.entries > 0)
+        .map(({ _id, firstName, lastName, imageURL }) => ({ _id, firstName, lastName, imageURL })),
     [employees]
   );
   const renderer = useSyncExternalStore(noopSubscribe, detectRenderer, () => "pending");
