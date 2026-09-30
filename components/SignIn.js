@@ -19,10 +19,10 @@ export default function SignIn() {
 
   return (
     <div className="relative flex min-h-[70dvh] items-center justify-center overflow-hidden">
-      {/* Drifting gold orbs behind the card. */}
+      {/* Drifting mint orbs behind the card. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-        <div className="absolute top-[5%] left-[18%] h-56 w-56 animate-float rounded-full bg-gold-400/15 blur-[90px]" />
-        <div className="absolute right-[15%] bottom-[8%] h-64 w-64 animate-float rounded-full bg-gold-300/10 blur-[100px] [animation-delay:-7s]" />
+        <div className="absolute top-[5%] left-[18%] h-56 w-56 animate-float rounded-full bg-accent-400/15 blur-[90px]" />
+        <div className="absolute right-[15%] bottom-[8%] h-64 w-64 animate-float rounded-full bg-accent-300/10 blur-[100px] [animation-delay:-7s]" />
       </div>
 
       <div className="card relative w-full max-w-md animate-fade-up bg-ink-900/80 p-8 text-center backdrop-blur-xl sm:p-10">

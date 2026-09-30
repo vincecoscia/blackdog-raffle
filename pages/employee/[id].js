@@ -99,7 +99,7 @@ export default function EmployeePage({ employee: initial, wins: initialWins, poo
             <p className="mt-1 truncate text-sm text-ink-400">{employee.email}</p>
             {wins.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="chip border-gold-400/25 bg-gold-400/10 text-gold-300">
+                <span className="chip border-accent-400/25 bg-accent-400/10 text-accent-300">
                   <TrophyIcon size={12} />
                   {plural(wins.length, "win")}
                 </span>
@@ -160,7 +160,7 @@ export default function EmployeePage({ employee: initial, wins: initialWins, poo
               <li key={win._id} className="group flex items-center gap-4 px-5 py-4">
                 <span
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                    i === 0 ? "bg-gold-400/15 text-gold-300" : "bg-white/5 text-ink-400"
+                    i === 0 ? "bg-accent-400/15 text-accent-300" : "bg-white/5 text-ink-400"
                   }`}
                 >
                   <TrophyIcon size={16} />

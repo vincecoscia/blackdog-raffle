@@ -32,7 +32,7 @@ export default function ConfirmDialog({
             {icon && (
               <div
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                  danger ? "bg-red-500/15 text-red-300" : "bg-gold-400/15 text-gold-300"
+                  danger ? "bg-red-500/15 text-red-300" : "bg-accent-400/15 text-accent-300"
                 }`}
               >
                 {icon}

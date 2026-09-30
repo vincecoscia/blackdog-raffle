@@ -74,7 +74,7 @@ export default function Employees({ employees, savingIds, winCounts = {}, onTogg
 
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn btn-secondary" onClick={() => setBulk(true)} disabled={!employees.length}>
-            <CheckIcon size={15} className="text-gold-300" />
+            <CheckIcon size={15} className="text-accent-300" />
             Everyone in
           </button>
           <button type="button" className="btn btn-secondary" onClick={() => setBulk(false)} disabled={!employees.length}>
@@ -120,7 +120,7 @@ export default function Employees({ employees, savingIds, winCounts = {}, onTogg
 
       {employees.length === 0 ? (
         <div className="card mt-6 flex flex-col items-center px-6 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gold-400/10 text-gold-300">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-400/10 text-accent-300">
             <UsersIcon size={26} />
           </div>
           <h3 className="mt-4 font-display text-lg font-bold">No teammates yet</h3>

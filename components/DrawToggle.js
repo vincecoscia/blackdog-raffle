@@ -13,7 +13,7 @@ export default function DrawToggle({ checked, onChange, saving = false, label = 
         checked={checked}
         onChange={onChange}
         aria-label={label}
-        className={`group relative inline-flex shrink-0 cursor-pointer items-center rounded-full border border-white/10 bg-ink-700 transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 data-checked:border-gold-400/60 data-checked:bg-gold-400 ${
+        className={`group relative inline-flex shrink-0 cursor-pointer items-center rounded-full border border-white/10 bg-ink-700 transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-accent-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 data-checked:border-accent-400/60 data-checked:bg-accent-400 ${
           big ? "h-8 w-14" : "h-6 w-11"
         }`}
       >
@@ -24,18 +24,18 @@ export default function DrawToggle({ checked, onChange, saving = false, label = 
           }`}
         >
           {saving ? (
-            <Spinner size={big ? 14 : 10} className="text-gold-400" />
+            <Spinner size={big ? 14 : 10} className="text-accent-400" />
           ) : (
             <CheckIcon
               size={big ? 14 : 10}
-              className="text-gold-300 opacity-0 transition-opacity group-data-checked:opacity-100"
+              className="text-accent-300 opacity-0 transition-opacity group-data-checked:opacity-100"
             />
           )}
         </span>
       </Switch>
       <span
         className={`font-semibold whitespace-nowrap transition-colors ${big ? "text-base" : "text-xs"} ${
-          checked ? "text-gold-300" : "text-ink-500"
+          checked ? "text-accent-300" : "text-ink-500"
         }`}
       >
         {checked ? "In the draw" : "Sitting out"}

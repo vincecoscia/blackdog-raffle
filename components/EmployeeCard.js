@@ -16,7 +16,7 @@ export default function EmployeeCard({ employee, wins = 0, saving, onToggle, onD
     >
       <Link
         href={`/employee/${employee._id}`}
-        className={`shrink-0 rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-gold-400/60 ${
+        className={`shrink-0 rounded-full outline-none transition focus-visible:ring-2 focus-visible:ring-accent-400/60 ${
           inDraw ? "" : "opacity-50 grayscale"
         }`}
       >
@@ -27,7 +27,7 @@ export default function EmployeeCard({ employee, wins = 0, saving, onToggle, onD
         <div className="flex items-center gap-2">
           <Link
             href={`/employee/${employee._id}`}
-            className={`truncate font-display text-[15px] font-bold outline-none hover:text-gold-300 focus-visible:text-gold-300 ${
+            className={`truncate font-display text-[15px] font-bold outline-none hover:text-accent-300 focus-visible:text-accent-300 ${
               inDraw ? "text-ink-50" : "text-ink-300"
             }`}
           >
@@ -35,7 +35,7 @@ export default function EmployeeCard({ employee, wins = 0, saving, onToggle, onD
           </Link>
           {wins > 0 && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold-400/10 px-1.5 py-0.5 text-[10px] font-bold text-gold-300"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-400/10 px-1.5 py-0.5 text-[10px] font-bold text-accent-300"
               title={`${wins} ${wins === 1 ? "win" : "wins"}`}
             >
               <TrophyIcon size={10} />

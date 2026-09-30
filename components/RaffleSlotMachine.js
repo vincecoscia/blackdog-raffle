@@ -6,7 +6,7 @@ import WinnerReveal from "./WinnerReveal";
 import { SparklesIcon, Spinner, UsersIcon, VolumeIcon, VolumeOffIcon } from "./icons";
 import { api } from "@/lib/client";
 import { celebrate, preloadConfetti } from "@/lib/confetti";
-import { fullName, plural, relativeDate } from "@/lib/format";
+import { fullName, plural } from "@/lib/format";
 import { DETENT_DURATION, buildStrip, detent, findLanding, planMotion } from "@/lib/reel";
 import {
   isSoundEnabled,
@@ -44,7 +44,7 @@ const wrap = (p, len) => {
  * loop that writes `transform` straight to the DOM — React never re-renders
  * mid-spin.
  */
-export default function RaffleSlotMachine({ employees, lastWinner, onWinner }) {
+export default function RaffleSlotMachine({ employees, onWinner }) {
   const strip = useMemo(() => buildStrip(employees), [employees]);
   const [phase, setPhase] = useState("idle"); // idle | drawing | spinning | landed
   // While a draw is in flight the reel keeps the strip it started with, even if
@@ -252,14 +252,14 @@ export default function RaffleSlotMachine({ employees, lastWinner, onWinner }) {
 
   return (
     <>
-      <section aria-label="Raffle" className="gold-frame animate-fade-up p-1">
+      <section aria-label="Raffle" className="accent-frame animate-fade-up p-1">
         <div className="rounded-[1.4rem] bg-ink-900/90 p-4 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="eyebrow pt-2.5">Blackdog weekly draw</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="chip">
-                  <UsersIcon size={13} className="text-gold-400" />
+                  <UsersIcon size={13} className="text-accent-400" />
                   {plural(players, "teammate")} in the draw
                 </span>
                 {players > 0 && <span className="chip text-ink-400">1 in {players} chance each</span>}
@@ -271,7 +271,7 @@ export default function RaffleSlotMachine({ employees, lastWinner, onWinner }) {
               aria-pressed={soundOn}
               aria-label={soundOn ? "Mute sound effects" : "Unmute sound effects"}
               title={soundOn ? "Sound on" : "Sound off"}
-              className={`btn btn-icon ${soundOn ? "btn-secondary text-gold-300" : "btn-ghost text-ink-500"}`}
+              className={`btn btn-icon ${soundOn ? "btn-secondary text-accent-300" : "btn-ghost text-ink-500"}`}
             >
               {soundOn ? <VolumeIcon size={18} /> : <VolumeOffIcon size={18} />}
             </button>
@@ -316,16 +316,16 @@ export default function RaffleSlotMachine({ employees, lastWinner, onWinner }) {
                 {/* Payline: glows brighter the faster the reel spins (see --speed). */}
                 <div
                   aria-hidden="true"
-                  className="reel-payline pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 border-y border-gold-400/35 bg-gold-400/4"
+                  className="reel-payline pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 border-y border-accent-400/35 bg-accent-400/4"
                   style={{ height: ROW_H }}
                 />
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 left-0 -translate-y-1/2 border-y-9 border-l-12 border-y-transparent border-l-gold-400 drop-shadow-[0_0_8px_rgb(247_201_72/.8)]"
+                  className="pointer-events-none absolute top-1/2 left-0 -translate-y-1/2 border-y-9 border-l-12 border-y-transparent border-l-accent-400 drop-shadow-[0_0_8px_rgb(119_221_175/.8)]"
                 />
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 border-y-9 border-r-12 border-y-transparent border-r-gold-400 drop-shadow-[0_0_8px_rgb(247_201_72/.8)]"
+                  className="pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 border-y-9 border-r-12 border-y-transparent border-r-accent-400 drop-shadow-[0_0_8px_rgb(119_221_175/.8)]"
                 />
                 <div aria-hidden="true" className="pointer-events-none absolute inset-0 shadow-[inset_0_0_60px_rgb(0_0_0/.7)]" />
               </>
@@ -345,16 +345,9 @@ export default function RaffleSlotMachine({ employees, lastWinner, onWinner }) {
               {buttonLabel}
             </button>
             <p className="text-sm text-ink-400 sm:ml-2" aria-live="polite">
-              {players === 0 ? (
-                "Nobody's in the draw yet."
-              ) : lastWinner ? (
-                <>
-                  Last winner: <span className="font-semibold text-ink-200">{fullName(lastWinner.winner)}</span>{" "}
-                  <span className="text-ink-500">· {relativeDate(lastWinner.date)}</span>
-                </>
-              ) : (
-                "No draws yet — make some history."
-              )}
+              {players === 0
+                ? "Nobody's in the draw yet — flip teammates in below."
+                : "One entry each. Everyone in the draw has the same shot."}
             </p>
           </div>
         </div>

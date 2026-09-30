@@ -11,7 +11,7 @@ export default function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/6 bg-ink-950/70 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-gold-400/60">
+        <Link href="/" className="group flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent-400/60">
           <Image
             src="/assets/black_dog_logo.png"
             alt=""
@@ -21,7 +21,7 @@ export default function Nav() {
             className="drop-shadow-[0_0_14px_rgb(255_255_255/.25)] transition group-hover:scale-105"
           />
           <span className="font-display text-sm font-extrabold tracking-[0.14em] whitespace-nowrap text-ink-50 uppercase sm:text-base sm:tracking-[0.18em]">
-            Blackdog <span className="text-gold-400">Raffle</span>
+            Blackdog <span className="text-accent-400">Raffle</span>
           </span>
         </Link>
 
@@ -33,7 +33,7 @@ export default function Nav() {
             </Link>
 
             <Menu as="div" className="relative">
-              <MenuButton className="flex items-center gap-2 rounded-full p-0.5 outline-none ring-white/10 transition hover:ring-2 focus-visible:ring-2 focus-visible:ring-gold-400/60 data-open:ring-2 data-open:ring-gold-400/60">
+              <MenuButton className="flex items-center gap-2 rounded-full p-0.5 outline-none ring-white/10 transition hover:ring-2 focus-visible:ring-2 focus-visible:ring-accent-400/60 data-open:ring-2 data-open:ring-accent-400/60">
                 {user.image ? (
                   <Image
                     src={user.image}

@@ -25,12 +25,12 @@ export default function WinnerReveal({ result, onClose, onAgain }) {
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
           transition
-          className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-gold-400/25 bg-ink-900 px-6 py-10 text-center shadow-[0_0_0_1px_rgb(247_201_72/.15),0_40px_120px_-20px_rgb(247_201_72/.35)] transition duration-500 ease-spring data-closed:scale-75 data-closed:opacity-0 sm:px-12 sm:py-14"
+          className="relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-accent-400/25 bg-ink-900 px-6 py-10 text-center shadow-[0_0_0_1px_rgb(119_221_175/.15),0_40px_120px_-20px_rgb(119_221_175/.35)] transition duration-500 ease-spring data-closed:scale-75 data-closed:opacity-0 sm:px-12 sm:py-14"
         >
           {/* Warm glow + a shine sweep across the card as it lands. */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_0%,rgb(247_201_72/.22),transparent_70%)]"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_0%,rgb(119_221_175/.22),transparent_70%)]"
           />
           <div
             aria-hidden="true"
@@ -58,8 +58,8 @@ export default function WinnerReveal({ result, onClose, onAgain }) {
 
               <p className="mt-4 animate-fade-up text-sm text-ink-300 [animation-delay:.3s]">
                 Congratulations, {winner.firstName}! Picked from{" "}
-                <span className="font-semibold text-gold-300">{result.poolSize}</span> teammates who turned in their
-                timesheets — a <span className="font-semibold text-gold-300">1 in {result.poolSize}</span> shot.
+                <span className="font-semibold text-accent-300">{result.poolSize}</span> teammates who turned in their
+                timesheets — a <span className="font-semibold text-accent-300">1 in {result.poolSize}</span> shot.
               </p>
               {result.raffle?.date && (
                 <p className="mt-1 animate-fade-up text-xs text-ink-500 [animation-delay:.35s]">

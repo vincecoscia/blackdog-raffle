@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Router from "next/router";
 
 /**
- * Thin gold progress bar during client-side navigation. Replaces the old
+ * Thin mint progress bar during client-side navigation. Replaces the old
  * approach of unmounting the whole page and showing a spinner.
  */
 export default function RouteProgress() {
@@ -37,7 +37,7 @@ export default function RouteProgress() {
         active ? "opacity-100" : "opacity-0"
       }`}
     >
-      <div className="h-full w-1/3 animate-progress bg-linear-to-r from-transparent via-gold-400 to-transparent" />
+      <div className="h-full w-1/3 animate-progress bg-linear-to-r from-transparent via-accent-400 to-transparent" />
     </div>
   );
 }
