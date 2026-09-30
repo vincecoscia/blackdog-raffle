@@ -11,6 +11,7 @@ import {
   isSoundEnabled,
   isSoundEnabledOnServer,
   playFanfare,
+  playScratch,
   playThunk,
   playTick,
   setSoundEnabled,
@@ -18,30 +19,23 @@ import {
   unlockAudio,
 } from "@/lib/sound";
 
-// three.js and the scene ship as their own chunk, fetched after hydration.
-const BallMachine = dynamic(() => import("./BallMachine"), { ssr: false, loading: () => <MachineLoading /> });
+// The animated scene ships as its own chunk, fetched after hydration.
+const DogFetch = dynamic(() => import("./DogFetch"), { ssr: false, loading: () => <SceneLoading /> });
 
 // ---- renderer choice (decided once, on the client) --------------------------
 let rendererChoice = null;
 const noopSubscribe = () => () => {};
 function detectRenderer() {
-  if (rendererChoice) return rendererChoice;
-  let gl = false;
-  try {
-    const c = document.createElement("canvas");
-    gl = Boolean(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    gl = false;
+  if (!rendererChoice) {
+    rendererChoice = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "dom" : "scene";
   }
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  rendererChoice = gl && !reduced ? "gl" : "dom";
   return rendererChoice;
 }
 
 /**
  * The raffle: orchestrates the draw (server call, sound, confetti, reveal) and
- * hands the visual to the 3D ball machine, or to the name shuffle on browsers
- * without WebGL / for reduced-motion users.
+ * hands the visual to the dog-fetches-a-bone scene, or to a simple name
+ * shuffle for users who prefer reduced motion.
  */
 export default function RaffleSlotMachine({ employees, onWinner }) {
   const participants = useMemo(
@@ -55,7 +49,7 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   const soundOn = useSyncExternalStore(subscribeSound, isSoundEnabled, isSoundEnabledOnServer);
 
   const [phase, setPhase] = useState("idle"); // idle | drawing | spinning | landed
-  const [machine, setMachine] = useState(null); // { draw, reset } from the 3D engine
+  const [scene, setScene] = useState(null); // { draw, reset } from the scene engine
   const [shuffle, setShuffle] = useState(null); // { key, winner } for the DOM fallback
   const [reveal, setReveal] = useState(null);
 
@@ -71,9 +65,9 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   const players = participants.length;
   const busy = phase === "drawing" || phase === "spinning";
 
-  /** Screen flash + a physical kick to the housing as the ball lands. */
+  /** Screen flash + a little kick to the frame as the dog sits with the bone. */
   const landingFx = useCallback(() => {
-    if (renderer !== "gl") return;
+    if (renderer !== "scene") return;
     flashEl.current?.animate([{ opacity: 0.5 }, { opacity: 0 }], { duration: 650, easing: "ease-out" });
     windowEl.current?.animate(
       [
@@ -118,12 +112,12 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
 
     setPhase("spinning");
     const { winner, raffle } = result.current;
-    if (renderer === "gl" && machine) {
-      machine.draw(winner);
+    if (renderer === "scene" && scene) {
+      scene.draw(winner);
     } else {
       setShuffle({ key: raffle._id, winner });
     }
-  }, [busy, machine, players, renderer]);
+  }, [busy, scene, players, renderer]);
 
   // After the reveal closes the winner stays in the cup until the next draw.
   const closeReveal = () => setReveal(null);
@@ -143,8 +137,8 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
 
   const buttonLabel = {
     idle: "Draw a winner",
-    drawing: "Shuffling the balls…",
-    spinning: "Drawing…",
+    drawing: "Shuffling the bones…",
+    spinning: "Fetching…",
     landed: "Draw again",
   }[phase];
 
@@ -177,21 +171,27 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             </button>
           </div>
 
-          {/* The machine window */}
+          {/* The stage */}
           <div
             ref={windowEl}
-            className="machine-window relative mt-5 h-120 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 sm:h-140"
+            className="stage-window relative mt-5 h-120 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 sm:h-140"
           >
             {players === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                 <SparklesIcon size={28} className="text-ink-600" />
-                <p className="mt-3 font-display text-lg font-bold text-ink-300">The machine is empty</p>
-                <p className="mt-1 text-sm text-ink-500">Flip teammates into the draw below to load it up.</p>
+                <p className="mt-3 font-display text-lg font-bold text-ink-300">No bones in the pile</p>
+                <p className="mt-1 text-sm text-ink-500">Flip teammates into the draw below to fill it up.</p>
               </div>
             ) : (
               <>
-                {renderer === "gl" && (
-                  <BallMachine participants={participants} onReady={setMachine} onLanded={landed} onClack={clack} />
+                {renderer === "scene" && (
+                  <DogFetch
+                    participants={participants}
+                    onReady={setScene}
+                    onLanded={landed}
+                    onClack={clack}
+                    onScratch={playScratch}
+                  />
                 )}
                 {showShuffle && (
                   <div className="absolute inset-0 bg-ink-950">
@@ -226,7 +226,7 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             <p className="text-sm text-ink-400 sm:ml-2" aria-live="polite">
               {players === 0
                 ? "Nobody's in the draw yet — flip teammates in below."
-                : "One ball each. Everyone in the draw has the same shot."}
+                : "One bone each. Everyone in the draw has the same shot."}
             </p>
           </div>
         </div>
@@ -237,11 +237,11 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   );
 }
 
-function MachineLoading() {
+function SceneLoading() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-500">
       <Spinner size={22} className="text-accent-400" />
-      <p className="text-xs font-semibold tracking-wide uppercase">Warming up the machine</p>
+      <p className="text-xs font-semibold tracking-wide uppercase">Waking up the dog</p>
     </div>
   );
 }
