@@ -180,7 +180,7 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
           {/* The machine window */}
           <div
             ref={windowEl}
-            className="machine-window relative mt-5 h-[440px] overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 sm:h-[520px]"
+            className="machine-window relative mt-5 h-120 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 sm:h-140"
           >
             {players === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">

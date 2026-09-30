@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -7,9 +8,10 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { avatarHue, fullName, initials } from "@/lib/format";
 
 /**
- * The lottery ball machine: a glass globe of balls (one per teammate) on a
- * pedestal. `draw(winner)` mixes the balls with an air jet, then lifts the
- * winner's ball up the tube into the cup and turns it to face the camera.
+ * The lottery machine: a glass globe of balls (one per teammate) held in a
+ * chrome cage on a lacquered cabinet with a scoreboard. `draw(winner)` mixes
+ * the balls with an air jet, then shoots the winner's ball up the tube into
+ * the display capsule on top, where it rolls to a stop facing the camera.
  *
  * Everything runs in a plain requestAnimationFrame loop outside React. The
  * component wires the DOM host and callbacks, and hands the engine's API
@@ -44,18 +46,55 @@ export default function BallMachine({ participants, onReady, onLanded, onClack }
 }
 
 // ---------------------------------------------------------------------------
-// Scene constants
+// Scene constants (world units; the globe has radius 1 and sits at the origin)
 // ---------------------------------------------------------------------------
 const ACCENT = 0x77ddaf;
 const GLOBE_R = 1;
 const BALL_R = 0.15;
 const FLOOR_Y = -0.66; // perforated air floor inside the globe
-const CUP_Y = 1.42;
 const GRAVITY = -3.4;
 const MIX_SECONDS = 3.0;
 const SETTLE_SECONDS = 0.7;
 const RISE_SECONDS = 1.7;
+const RETURN_SECONDS = 0.6;
 
+// Chrome cage around the globe: an equator band plus meridian arcs that run
+// from the cradle up to the crown ring at the top.
+const CAGE_R = 1.035;
+const CAGE_LOW = THREE.MathUtils.degToRad(-60);
+const CAGE_HIGH = THREE.MathUtils.degToRad(73);
+const CAGE_BASE_Y = CAGE_R * Math.sin(CAGE_LOW);
+
+// Cabinet the globe stands on.
+const CAB_W = 2.3;
+const CAB_H = 0.8;
+const CAB_D = 1.4;
+const CAB_TOP = -1.1;
+const STAGE_Y = CAB_TOP - CAB_H;
+
+// Display capsule on top, where the winning ball comes to rest.
+const CAPSULE_Y = 1.64;
+const CAPSULE_R = 0.2;
+const CAPSULE_HALF = 0.42; // half-length of the straight section
+const REST_Y = CAPSULE_Y - CAPSULE_R + BALL_R + 0.004;
+
+const VIEW_TOP = CAPSULE_Y + CAPSULE_R + 0.08;
+const VIEW_BOTTOM = STAGE_Y - 0.06;
+const VIEW_MID = (VIEW_TOP + VIEW_BOTTOM) / 2;
+const CAM_ELEVATION = 0.8;
+
+// Extremes of the machine, projected in fit() to frame it exactly.
+const FRAME_POINTS = [
+  [0, VIEW_TOP, 0],
+  [CAPSULE_HALF + CAPSULE_R + 0.06, CAPSULE_Y + CAPSULE_R, 0],
+  [-(CAPSULE_HALF + CAPSULE_R + 0.06), CAPSULE_Y + CAPSULE_R, 0],
+  [CAGE_R + 0.06, 0, 0],
+  [-(CAGE_R + 0.06), 0, 0],
+  [CAB_W / 2 + 0.05, STAGE_Y - 0.02, CAB_D / 2 + 0.05],
+  [-(CAB_W / 2 + 0.05), STAGE_Y - 0.02, CAB_D / 2 + 0.05],
+].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
@@ -75,8 +114,12 @@ function createEngine(host, callbacks) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x070709);
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 40);
-  const camHome = { pos: new THREE.Vector3(0, 0.75, 5.6), target: new THREE.Vector3(0, 0.02, 0) };
-  const camPresent = { pos: new THREE.Vector3(0.2, 1.36, 1.5), target: new THREE.Vector3(0, CUP_Y + 0.02, 0) };
+  // Home framing is solved in fit(); this is just a starting guess.
+  const camHome = { pos: new THREE.Vector3(0, VIEW_MID + CAM_ELEVATION, 7), target: new THREE.Vector3(0, VIEW_MID, 0) };
+  const camPresent = {
+    pos: new THREE.Vector3(0.32, CAPSULE_Y + 0.34, 2.5),
+    target: new THREE.Vector3(0, CAPSULE_Y - 0.06, 0),
+  };
   const cam = {
     pos: camHome.pos.clone(),
     target: camHome.target.clone(),
@@ -110,150 +153,330 @@ function createEngine(host, callbacks) {
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
   key.position.set(2.5, 4, 3);
   scene.add(key);
-  const underLight = new THREE.PointLight(ACCENT, 3, 5, 2);
-  underLight.position.set(0, -1.05, 0.5);
+  const underLight = new THREE.PointLight(ACCENT, 1.3, 5, 2);
+  underLight.position.set(0, CAB_TOP + 0.1, 0.5);
   scene.add(underLight);
 
-  // ---- the machine ---------------------------------------------------------
+  // ---- materials -----------------------------------------------------------
   const disposables = [];
   const track = (o) => (disposables.push(o), o);
+  const add = (mesh, x = 0, y = 0, z = 0) => {
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+    return mesh;
+  };
 
+  const chrome = track(new THREE.MeshStandardMaterial({ color: 0xdcdce2, metalness: 1, roughness: 0.16 }));
   const metal = track(new THREE.MeshStandardMaterial({ color: 0x1b1b21, metalness: 0.85, roughness: 0.32 }));
   const darkMetal = track(new THREE.MeshStandardMaterial({ color: 0x0f0f13, metalness: 0.9, roughness: 0.45 }));
-  const accentGlow = track(
-    new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 1.15, roughness: 0.4 })
+  const lacquer = track(
+    new THREE.MeshPhysicalMaterial({ color: 0x0c0c10, metalness: 0.25, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06 })
   );
-
-  // Soft mint stage glow behind the machine, and a pool of ring-light beneath it.
-  const stageGlow = new THREE.Mesh(
-    track(new THREE.PlaneGeometry(9, 9)),
-    track(
-      new THREE.MeshBasicMaterial({
-        map: track(radialTexture("rgba(119,221,175,0.55)", "rgba(119,221,175,0)")),
-        transparent: true,
-        opacity: 0.09,
-        depthWrite: false,
-      })
-    )
-  );
-  stageGlow.position.set(0, -0.1, -2.5);
-  scene.add(stageGlow);
-  const pool = new THREE.Mesh(
-    track(new THREE.PlaneGeometry(3.2, 3.2)),
-    track(
-      new THREE.MeshBasicMaterial({
-        map: track(radialTexture("rgba(119,221,175,0.8)", "rgba(119,221,175,0)")),
-        transparent: true,
-        opacity: 0.14,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    )
-  );
-  pool.rotation.x = -Math.PI / 2;
-  pool.position.y = -1.28;
-  scene.add(pool);
-
-  const pedestal = new THREE.Mesh(track(new THREE.CylinderGeometry(0.6, 0.66, 0.2, 48)), metal);
-  pedestal.position.y = -1.17;
-  scene.add(pedestal);
-  const neck = new THREE.Mesh(track(new THREE.CylinderGeometry(0.34, 0.42, 0.22, 48)), darkMetal);
-  neck.position.y = -0.98;
-  scene.add(neck);
-  const ring = new THREE.Mesh(track(new THREE.TorusGeometry(0.66, 0.018, 12, 96)), accentGlow);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = -1.065;
-  scene.add(ring);
-
-  // Real refractive glass: three renders what's behind it into a buffer and
-  // bends it through the sphere, so the balls look properly *inside*.
-  const glass = new THREE.Mesh(
-    track(new THREE.SphereGeometry(GLOBE_R, 72, 48)),
+  // LED strips + deck ring share one material so they pulse together.
+  const led = track(new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 1.3, roughness: 0.5 }));
+  // The deck ring sits right under the globe, so it runs at about half the
+  // strips' brightness to keep the bottom of the globe from blowing out.
+  const deckGlow = track(led.clone());
+  const capGlow = track(new THREE.MeshStandardMaterial({ color: ACCENT, emissive: ACCENT, emissiveIntensity: 0.3 }));
+  const clearGlass = (side = THREE.FrontSide) =>
     track(
       new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
         transmission: 1,
-        thickness: 0.4,
+        thickness: 0.06,
         ior: 1.45,
-        roughness: 0.035,
-        metalness: 0,
+        roughness: 0.04,
         clearcoat: 1,
         clearcoatRoughness: 0.03,
-        envMapIntensity: 1,
-        specularIntensity: 0.8,
-        attenuationColor: new THREE.Color(0xdcfff1),
-        attenuationDistance: 1.6,
-        iridescence: 0.18,
-        iridescenceIOR: 1.3,
+        specularIntensity: 0.9,
+        side,
       })
+    );
+
+  // ---- stage ---------------------------------------------------------------
+  // Soft mint glow behind, a faintly glossy floor that fades out, a contact
+  // shadow under the cabinet and a pool of mint light spilling around it.
+  const backGlow = add(
+    new THREE.Mesh(
+      track(new THREE.PlaneGeometry(10, 10)),
+      track(
+        new THREE.MeshBasicMaterial({
+          map: track(radialTexture("rgba(119,221,175,0.55)", "rgba(119,221,175,0)")),
+          transparent: true,
+          opacity: 0.09,
+          depthWrite: false,
+        })
+      )
+    ),
+    0,
+    0,
+    -3
+  );
+  backGlow.renderOrder = -1;
+
+  const floor = add(
+    new THREE.Mesh(
+      track(new THREE.CircleGeometry(6, 64)),
+      track(
+        new THREE.MeshStandardMaterial({
+          color: 0x0b0b0e,
+          metalness: 0.5,
+          roughness: 0.38,
+          alphaMap: track(radialTexture("rgb(255,255,255)", "rgb(0,0,0)")),
+          transparent: true,
+        })
+      )
+    ),
+    0,
+    STAGE_Y
+  );
+  floor.rotation.x = -Math.PI / 2;
+
+  const shadow = add(
+    new THREE.Mesh(
+      track(new THREE.PlaneGeometry(CAB_W * 1.5, CAB_D * 2.2)),
+      track(
+        new THREE.MeshBasicMaterial({
+          map: track(radialTexture("rgba(0,0,0,0.9)", "rgba(0,0,0,0)")),
+          transparent: true,
+          depthWrite: false,
+        })
+      )
+    ),
+    0,
+    STAGE_Y + 0.003
+  );
+  shadow.rotation.x = -Math.PI / 2;
+
+  const pool = add(
+    new THREE.Mesh(
+      track(new THREE.PlaneGeometry(4.6, 4.6)),
+      track(
+        new THREE.MeshBasicMaterial({
+          map: track(radialTexture("rgba(119,221,175,0.8)", "rgba(119,221,175,0)")),
+          transparent: true,
+          opacity: 0.16,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      )
+    ),
+    0,
+    STAGE_Y + 0.005
+  );
+  pool.rotation.x = -Math.PI / 2;
+
+  // A soft overhead spotlight beam, like a TV draw.
+  const beam = add(
+    new THREE.Mesh(
+      track(new THREE.ConeGeometry(2.1, 6.4, 48, 1, true)),
+      track(
+        new THREE.ShaderMaterial({
+          uniforms: { uColor: { value: new THREE.Color(0xdffff0) }, uIntensity: { value: 0.07 } },
+          vertexShader: `
+            varying vec3 vN; varying vec3 vV; varying float vH;
+            void main() {
+              vN = normalize(normalMatrix * normal);
+              vec4 mv = modelViewMatrix * vec4(position, 1.0);
+              vV = normalize(-mv.xyz);
+              vH = uv.y;
+              gl_Position = projectionMatrix * mv;
+            }`,
+          fragmentShader: `
+            uniform vec3 uColor; uniform float uIntensity;
+            varying vec3 vN; varying vec3 vV; varying float vH;
+            void main() {
+              float facing = pow(abs(dot(normalize(vN), normalize(vV))), 2.0);
+              float fade = smoothstep(0.0, 0.35, vH) * (0.4 + 0.6 * vH);
+              float a = facing * fade * uIntensity;
+              gl_FragColor = vec4(uColor * a, a);
+            }`,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+      )
+    ),
+    0,
+    STAGE_Y + 3.2
+  );
+  beam.renderOrder = 40;
+
+  // ---- cabinet ---------------------------------------------------------------
+  add(new THREE.Mesh(track(new RoundedBoxGeometry(CAB_W, CAB_H, CAB_D, 5, 0.08)), lacquer), 0, CAB_TOP - CAB_H / 2);
+  add(new THREE.Mesh(track(new RoundedBoxGeometry(CAB_W + 0.04, 0.045, CAB_D + 0.04, 3, 0.02)), chrome), 0, CAB_TOP - 0.02);
+  add(new THREE.Mesh(track(new RoundedBoxGeometry(CAB_W + 0.07, 0.06, CAB_D + 0.07, 3, 0.025)), chrome), 0, STAGE_Y + 0.03);
+
+  // LED strips across the front and down both sides.
+  const frontStrip = track(new THREE.BoxGeometry(CAB_W - 0.34, 0.016, 0.012));
+  const sideStrip = track(new THREE.BoxGeometry(0.012, 0.016, CAB_D - 0.3));
+  for (const y of [CAB_TOP - 0.085, STAGE_Y + 0.105]) {
+    add(new THREE.Mesh(frontStrip, led), 0, y, CAB_D / 2 + 0.004);
+    add(new THREE.Mesh(sideStrip, led), CAB_W / 2 + 0.004, y, 0);
+    add(new THREE.Mesh(sideStrip, led), -CAB_W / 2 - 0.004, y, 0);
+  }
+
+  // Scoreboard: Blackdog logo + a line of status text that follows the draw.
+  const fontFamily =
+    getComputedStyle(document.documentElement).getPropertyValue("--font-bricolage").trim() ||
+    "Inter, system-ui, sans-serif";
+  const board = createBoard(fontFamily, CAB_W - 0.4, CAB_H - 0.34);
+  track(board.map);
+  track(board.glow);
+  const boardY = CAB_TOP - CAB_H / 2 + 0.005;
+  add(
+    new THREE.Mesh(track(new RoundedBoxGeometry(board.width + 0.06, board.height + 0.06, 0.02, 2, 0.02)), chrome),
+    0,
+    boardY,
+    CAB_D / 2 + 0.004
+  );
+  add(
+    new THREE.Mesh(
+      track(new THREE.PlaneGeometry(board.width, board.height)),
+      track(
+        new THREE.MeshPhysicalMaterial({
+          map: board.map,
+          emissiveMap: board.glow,
+          emissive: 0xffffff,
+          emissiveIntensity: 1.35,
+          roughness: 0.35,
+          clearcoat: 1,
+          clearcoatRoughness: 0.04,
+        })
+      )
+    ),
+    0,
+    boardY,
+    CAB_D / 2 + 0.016
+  );
+
+  // Turntable deck with a ring light, and the cradle the globe sits in.
+  add(new THREE.Mesh(track(new THREE.CylinderGeometry(0.8, 0.84, 0.07, 64)), metal), 0, CAB_TOP + 0.035);
+  const deckRing = add(new THREE.Mesh(track(new THREE.TorusGeometry(0.81, 0.014, 12, 128)), deckGlow), 0, CAB_TOP + 0.07);
+  deckRing.rotation.x = Math.PI / 2;
+  const cradleH = CAGE_BASE_Y - (CAB_TOP + 0.07);
+  add(
+    new THREE.Mesh(track(new THREE.CylinderGeometry(0.5, 0.58, cradleH, 64)), darkMetal),
+    0,
+    CAB_TOP + 0.07 + cradleH / 2
+  );
+
+  // ---- globe -----------------------------------------------------------------
+  // Real refractive glass: three renders what's behind it into a buffer and
+  // bends it through the sphere, so the balls look properly *inside*.
+  const glass = add(
+    new THREE.Mesh(
+      track(new THREE.SphereGeometry(GLOBE_R, 72, 48)),
+      track(
+        new THREE.MeshPhysicalMaterial({
+          color: 0xffffff,
+          transmission: 1,
+          thickness: 0.4,
+          ior: 1.45,
+          roughness: 0.035,
+          metalness: 0,
+          clearcoat: 1,
+          clearcoatRoughness: 0.03,
+          envMapIntensity: 1,
+          specularIntensity: 0.8,
+          attenuationColor: new THREE.Color(0xdcfff1),
+          attenuationDistance: 1.6,
+          iridescence: 0.18,
+          iridescenceIOR: 1.3,
+        })
+      )
     )
   );
   glass.renderOrder = 20;
-  scene.add(glass);
 
   // Mint fresnel rim: the globe's edge catches the light. Bloom picks it up.
-  const rim = new THREE.Mesh(
-    track(new THREE.SphereGeometry(GLOBE_R + 0.004, 72, 48)),
-    track(
-      new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: new THREE.Color(ACCENT) }, uIntensity: { value: 0.9 } },
-        vertexShader: `
-          varying vec3 vN; varying vec3 vV;
-          void main() {
-            vN = normalize(normalMatrix * normal);
-            vec4 mv = modelViewMatrix * vec4(position, 1.0);
-            vV = normalize(-mv.xyz);
-            gl_Position = projectionMatrix * mv;
-          }`,
-        fragmentShader: `
-          uniform vec3 uColor; uniform float uIntensity;
-          varying vec3 vN; varying vec3 vV;
-          void main() {
-            float f = pow(1.0 - max(dot(normalize(vN), normalize(vV)), 0.0), 3.2);
-            gl_FragColor = vec4(uColor * f * uIntensity, f * uIntensity);
-          }`,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
+  const rim = add(
+    new THREE.Mesh(
+      track(new THREE.SphereGeometry(GLOBE_R + 0.004, 72, 48)),
+      track(
+        new THREE.ShaderMaterial({
+          uniforms: { uColor: { value: new THREE.Color(ACCENT) }, uIntensity: { value: 0.9 } },
+          vertexShader: `
+            varying vec3 vN; varying vec3 vV;
+            void main() {
+              vN = normalize(normalMatrix * normal);
+              vec4 mv = modelViewMatrix * vec4(position, 1.0);
+              vV = normalize(-mv.xyz);
+              gl_Position = projectionMatrix * mv;
+            }`,
+          fragmentShader: `
+            uniform vec3 uColor; uniform float uIntensity;
+            varying vec3 vN; varying vec3 vV;
+            void main() {
+              float f = pow(1.0 - max(dot(normalize(vN), normalize(vV)), 0.0), 3.2);
+              gl_FragColor = vec4(uColor * f * uIntensity, f * uIntensity);
+            }`,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      )
     )
   );
   rim.renderOrder = 21;
-  scene.add(rim);
+  const rimMaterial = rim.material;
 
-  // Chrome mounting ring where the globe meets the neck.
-  const chrome = track(new THREE.MeshStandardMaterial({ color: 0xd8d8de, metalness: 1, roughness: 0.18 }));
-  const bottomRing = new THREE.Mesh(track(new THREE.TorusGeometry(0.44, 0.03, 14, 72)), chrome);
-  bottomRing.rotation.x = Math.PI / 2;
-  bottomRing.position.y = -0.9;
-  scene.add(bottomRing);
-
-  // Perforated air floor inside the globe: the balls rest on it and the jet
-  // blows up through it.
-  const floorR = Math.sqrt(GLOBE_R * GLOBE_R - FLOOR_Y * FLOOR_Y) - 0.02;
-  const airFloor = new THREE.Mesh(
-    track(new THREE.CircleGeometry(floorR, 64)),
-    track(
-      new THREE.MeshStandardMaterial({
-        color: 0x14141a,
-        metalness: 0.7,
-        roughness: 0.5,
-        alphaMap: track(grateTexture()),
-        transparent: true,
-        side: THREE.DoubleSide,
-      })
+  // ---- chrome cage -------------------------------------------------------
+  const flat = (mesh) => ((mesh.rotation.x = Math.PI / 2), mesh);
+  flat(add(new THREE.Mesh(track(new THREE.TorusGeometry(CAGE_R, 0.032, 16, 160)), chrome)));
+  const boltGeo = track(new THREE.SphereGeometry(0.026, 12, 8));
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    add(new THREE.Mesh(boltGeo, chrome), Math.cos(a) * (CAGE_R + 0.03), 0, Math.sin(a) * (CAGE_R + 0.03));
+  }
+  flat(
+    add(
+      new THREE.Mesh(track(new THREE.TorusGeometry(CAGE_R * Math.cos(CAGE_LOW), 0.026, 12, 96)), chrome),
+      0,
+      CAGE_BASE_Y
     )
   );
+  flat(
+    add(
+      new THREE.Mesh(track(new THREE.TorusGeometry(CAGE_R * Math.cos(CAGE_HIGH), 0.024, 12, 64)), chrome),
+      0,
+      CAGE_R * Math.sin(CAGE_HIGH)
+    )
+  );
+  const arcGeo = track(new THREE.TorusGeometry(CAGE_R, 0.013, 8, 96, CAGE_HIGH - CAGE_LOW));
+  for (let i = 0; i < 4; i++) {
+    const arm = new THREE.Group();
+    arm.rotation.y = Math.PI / 4 + (i * Math.PI) / 2;
+    const arc = new THREE.Mesh(arcGeo, chrome);
+    arc.rotation.z = CAGE_LOW;
+    arm.add(arc);
+    scene.add(arm);
+  }
+
+  // ---- inside the globe ------------------------------------------------------
+  // Perforated air floor: the balls rest on it and the jet blows up through it.
+  const floorR = Math.sqrt(GLOBE_R * GLOBE_R - FLOOR_Y * FLOOR_Y) - 0.02;
+  const airFloor = add(
+    new THREE.Mesh(
+      track(new THREE.CircleGeometry(floorR, 64)),
+      track(
+        new THREE.MeshStandardMaterial({
+          color: 0x14141a,
+          metalness: 0.7,
+          roughness: 0.5,
+          alphaMap: track(grateTexture()),
+          transparent: true,
+          side: THREE.DoubleSide,
+        })
+      )
+    ),
+    0,
+    FLOOR_Y
+  );
   airFloor.rotation.x = -Math.PI / 2;
-  airFloor.position.y = FLOOR_Y;
-  scene.add(airFloor);
-  const floorRing = new THREE.Mesh(track(new THREE.TorusGeometry(floorR, 0.02, 10, 72)), chrome);
-  floorRing.rotation.x = Math.PI / 2;
-  floorRing.position.y = FLOOR_Y;
-  scene.add(floorRing);
-  const jetLight = new THREE.PointLight(ACCENT, 0, 2.2, 2);
-  jetLight.position.set(0, FLOOR_Y + 0.05, 0);
-  scene.add(jetLight);
+  flat(add(new THREE.Mesh(track(new THREE.TorusGeometry(floorR, 0.02, 10, 72)), chrome), 0, FLOOR_Y));
+  const jetLight = add(new THREE.PointLight(ACCENT, 0, 2.2, 2), 0, FLOOR_Y + 0.05);
 
   // Air-jet particles: streaks rising from the floor while the blower runs.
   const JETS = 260;
@@ -285,41 +508,37 @@ function createEngine(host, callbacks) {
   );
   scene.add(jets);
 
-  // Opening at the top of the globe, the tube and the winner's cup.
-  const collar = new THREE.Mesh(track(new THREE.TorusGeometry(0.2, 0.03, 12, 48)), metal);
-  collar.rotation.x = Math.PI / 2;
-  collar.position.y = 0.985;
-  scene.add(collar);
-  const tube = new THREE.Mesh(
-    track(new THREE.CylinderGeometry(0.19, 0.19, 0.32, 32, 1, true)),
-    track(
-      new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.16,
-        roughness: 0.05,
-        clearcoat: 1,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      })
-    )
+  // ---- draw tube and display capsule ---------------------------------------
+  flat(add(new THREE.Mesh(track(new THREE.TorusGeometry(0.2, 0.03, 12, 48)), chrome), 0, 0.99));
+  const tubeBottom = 0.99;
+  const tubeTop = CAPSULE_Y - 0.17;
+  const tube = add(
+    new THREE.Mesh(track(new THREE.CylinderGeometry(0.19, 0.19, tubeTop - tubeBottom, 32, 1, true)), clearGlass(THREE.DoubleSide)),
+    0,
+    (tubeTop + tubeBottom) / 2
   );
-  tube.position.y = 1.15;
-  tube.renderOrder = 21;
-  scene.add(tube);
-  const cup = new THREE.Mesh(track(new THREE.CylinderGeometry(0.2, 0.16, 0.12, 40, 1, true)), darkMetal);
-  cup.position.y = CUP_Y - 0.12;
-  scene.add(cup);
-  const cupFloor = new THREE.Mesh(track(new THREE.CircleGeometry(0.16, 32)), darkMetal);
-  cupFloor.rotation.x = -Math.PI / 2;
-  cupFloor.position.y = CUP_Y - 0.18;
-  scene.add(cupFloor);
-  const cupRim = new THREE.Mesh(track(new THREE.TorusGeometry(0.2, 0.014, 10, 48)), accentGlow.clone());
-  track(cupRim.material);
-  cupRim.material.emissiveIntensity = 0.35;
-  cupRim.rotation.x = Math.PI / 2;
-  cupRim.position.y = CUP_Y - 0.06;
-  scene.add(cupRim);
+  tube.renderOrder = 22;
+  flat(add(new THREE.Mesh(track(new THREE.TorusGeometry(0.205, 0.024, 12, 48)), chrome), 0, tubeTop - 0.005));
+
+  const capsule = add(
+    new THREE.Mesh(track(new THREE.CapsuleGeometry(CAPSULE_R, CAPSULE_HALF * 2, 12, 32)), clearGlass()),
+    0,
+    CAPSULE_Y
+  );
+  capsule.rotation.z = Math.PI / 2;
+  capsule.renderOrder = 22;
+  const capsuleRim = add(new THREE.Mesh(capsule.geometry, rimMaterial), 0, CAPSULE_Y);
+  capsuleRim.rotation.z = Math.PI / 2;
+  capsuleRim.scale.setScalar(1.015);
+  capsuleRim.renderOrder = 23;
+  const bandGeo = track(new THREE.TorusGeometry(CAPSULE_R + 0.008, 0.02, 12, 48));
+  const capLightGeo = track(new THREE.TorusGeometry(CAPSULE_R + 0.01, 0.009, 8, 48));
+  const finialGeo = track(new THREE.SphereGeometry(0.035, 16, 12));
+  for (const s of [-1, 1]) {
+    add(new THREE.Mesh(bandGeo, chrome), s * CAPSULE_HALF, CAPSULE_Y).rotation.y = Math.PI / 2;
+    add(new THREE.Mesh(capLightGeo, capGlow), s * (CAPSULE_HALF - 0.07), CAPSULE_Y).rotation.y = Math.PI / 2;
+    add(new THREE.Mesh(finialGeo, chrome), s * (CAPSULE_HALF + CAPSULE_R + 0.01), CAPSULE_Y);
+  }
 
   // Halo + light that follow the winning ball.
   const halo = new THREE.Sprite(
@@ -344,11 +563,7 @@ function createEngine(host, callbacks) {
   const ballGeo = track(new THREE.SphereGeometry(BALL_R, 28, 20));
   let balls = [];
   let pendingParticipants = null;
-
-  // Same display face the rest of the app uses (next/font exposes it on :root).
-  const fontFamily =
-    getComputedStyle(document.documentElement).getPropertyValue("--font-bricolage").trim() ||
-    "Inter, system-ui, sans-serif";
+  let count = 0;
 
   const makeBall = (p) => {
     const tex = track(ballTexture(p, fontFamily));
@@ -364,9 +579,9 @@ function createEngine(host, callbacks) {
     scene.add(mesh);
     return {
       id: p._id,
+      name: fullName(p),
       mesh,
       mat,
-      baseColor: mat.color.clone(),
       v: new THREE.Vector3(),
       w: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2),
       kinematic: false,
@@ -398,8 +613,20 @@ function createEngine(host, callbacks) {
   };
 
   // ---- state machine -------------------------------------------------------
-  const state = { mode: "idle", t: 0, blower: 0.12, winner: null, path: null, startQuat: new THREE.Quaternion() };
+  const state = {
+    mode: "idle",
+    t: 0,
+    blower: 0.12,
+    winner: null,
+    returning: null,
+    path: null,
+    bounces: 0,
+    startQuat: new THREE.Quaternion(),
+  };
   let lastClack = 0;
+
+  const showIdleBoard = () => board.set("BLACKDOG WEEKLY DRAW", count ? `${count} IN THE DRAW` : "LOAD THE MACHINE");
+  showIdleBoard();
 
   const clack = (speed) => {
     const now = performance.now();
@@ -408,24 +635,30 @@ function createEngine(host, callbacks) {
     callbacks.current.onClack?.(Math.min(1, speed / 4));
   };
 
+  const clearWinnerFx = (ball) => {
+    if (ball) {
+      ball.mat.emissive.set(0x000000);
+      ball.mat.emissiveIntensity = 0;
+    }
+    halo.material.opacity = 0;
+    winnerLight.intensity = 0;
+    capGlow.emissiveIntensity = 0.3;
+  };
+
   const selectWinner = (ball) => {
     state.winner = ball;
     ball.mat.emissive.set(ACCENT);
     ball.mat.emissiveIntensity = 0.07;
   };
 
+  /** Drop the current winner straight back into the globe (no animation). */
   const deselectWinner = () => {
     const b = state.winner;
     if (!b) return;
-    b.mat.color.copy(b.baseColor);
-    b.mat.emissive.set(0x000000);
-    b.mat.emissiveIntensity = 0;
+    clearWinnerFx(b);
     b.kinematic = false;
     b.mesh.position.set((Math.random() - 0.5) * 0.2, 0.55, (Math.random() - 0.5) * 0.2);
     b.v.set(0, 0, 0);
-    halo.material.opacity = 0;
-    winnerLight.intensity = 0;
-    cupRim.material.emissiveIntensity = 0.35;
     state.winner = null;
   };
 
@@ -438,23 +671,52 @@ function createEngine(host, callbacks) {
       buildBallsWhenReady(pendingParticipants);
       pendingParticipants = null;
     }
+    showIdleBoard();
   };
 
   const draw = (winner) => {
-    if (state.mode !== "idle") reset();
+    // The roster changed while the last winner was on show: start clean.
+    if (pendingParticipants) {
+      deselectWinner();
+      state.mode = "idle";
+      buildBalls(pendingParticipants);
+      pendingParticipants = null;
+    }
     let ball = balls.find((b) => b.id === winner._id);
     if (!ball) {
       ball = makeBall(winner);
       balls.push(ball);
     }
     state.pendingWinner = ball;
-    state.mode = "mixing";
     state.t = 0;
+
+    if (state.winner && state.mode === "present") {
+      // Send the previous winner back down the tube before mixing again.
+      const b = state.winner;
+      clearWinnerFx(b);
+      state.returning = b;
+      state.winner = null;
+      state.path = new THREE.CatmullRomCurve3([
+        b.mesh.position.clone(),
+        new THREE.Vector3(0, CAPSULE_Y - 0.12, 0),
+        new THREE.Vector3(0, 0.98, 0),
+        new THREE.Vector3(0, 0.55, 0),
+      ]);
+      state.mode = "return";
+    } else {
+      deselectWinner();
+      state.mode = "mixing";
+    }
+    moveCamera(camHome, 0.9);
+    board.set("AIR ON", "MIXING…");
   };
 
   const setParticipants = (list) => {
-    if (state.mode === "idle") buildBallsWhenReady(list);
-    else pendingParticipants = list;
+    count = list.length;
+    if (state.mode === "idle") {
+      buildBallsWhenReady(list);
+      showIdleBoard();
+    } else pendingParticipants = list;
   };
 
   // ---- physics ---------------------------------------------------------------
@@ -554,16 +816,30 @@ function createEngine(host, callbacks) {
   let swayNow = 1;
 
   const update = (dt) => {
+    clock += dt;
     state.t += dt;
     const { mode, t } = state;
 
-    if (mode === "mixing") {
+    if (mode === "return") {
+      const b = state.returning;
+      const k = Math.min(1, t / RETURN_SECONDS);
+      state.path.getPointAt(k * k, b.mesh.position); // falls, so it accelerates
+      if (k >= 1) {
+        b.kinematic = false;
+        b.v.set(0, -2.2, 0);
+        b.w.set(3, 1, 2);
+        state.returning = null;
+        state.mode = "mixing";
+        state.t = 0;
+      }
+    } else if (mode === "mixing") {
       state.blower = Math.min(1, t / 0.4);
       if (t >= MIX_SECONDS) {
         state.mode = "settle";
         state.t = 0;
         state.blower = 0;
         selectWinner(state.pendingWinner);
+        board.set("HERE IT COMES", "DRAWING…");
       }
     } else if (mode === "settle") {
       const k = Math.min(1, t / 0.5);
@@ -576,8 +852,8 @@ function createEngine(host, callbacks) {
         state.path = new THREE.CatmullRomCurve3([
           b.mesh.position.clone(),
           new THREE.Vector3(b.mesh.position.x * 0.4, 0.35, b.mesh.position.z * 0.4),
-          new THREE.Vector3(0, 1.02, 0),
-          new THREE.Vector3(0, CUP_Y, 0),
+          new THREE.Vector3(0, 0.98, 0),
+          new THREE.Vector3(0, CAPSULE_Y + 0.03, 0),
         ]);
         state.startQuat.copy(b.mesh.quaternion);
         state.mode = "rise";
@@ -587,7 +863,7 @@ function createEngine(host, callbacks) {
       const b = state.winner;
       const k = Math.min(1, t / RISE_SECONDS);
       state.path.getPointAt(easeInOut(k), b.mesh.position);
-      // Turn the label toward the camera over the last stretch.
+      // Turn the badge toward the camera over the last stretch.
       const face = Math.max(0, (k - 0.55) / 0.45);
       b.mesh.quaternion.slerpQuaternions(state.startQuat, identity, easeOut(face));
       if (k > 0.3 && !state.pushed) {
@@ -597,21 +873,43 @@ function createEngine(host, callbacks) {
       if (k >= 1) {
         state.mode = "present";
         state.t = 0;
-        cupRim.material.emissiveIntensity = 1.1;
+        state.bounces = 0;
+        capGlow.emissiveIntensity = 0.85;
         winnerLight.intensity = 0.12;
+        board.set("WINNER", b.name.toUpperCase());
         callbacks.current.onLanded?.();
       }
     } else if (mode === "present") {
-      // Settled in the cup: a gentle hover so it still feels alive.
+      // Drops into the capsule, bounces, rolls back and forth and settles —
+      // rolling along x spins the badge in-plane, so it ends up upright.
       const b = state.winner;
-      b.mesh.position.y = CUP_Y + Math.sin(t * 2.2) * 0.008;
-      b.mesh.quaternion.slerp(identity, 0.05);
+      const decay = Math.exp(-4.5 * t);
+      const phase = t * 9;
+      b.mesh.position.y = REST_Y + Math.abs(Math.cos(phase)) * 0.075 * decay;
+      const bounce = Math.floor(phase / Math.PI + 0.5);
+      if (bounce > state.bounces) {
+        state.bounces = bounce;
+        if (decay > 0.12) callbacks.current.onClack?.(Math.min(1, decay));
+      }
+      const x = 0.24 * Math.exp(-1.8 * t) * Math.sin(4.6 * t);
+      b.mesh.position.x = x;
+      b.mesh.position.z = 0;
+      b.mesh.quaternion.setFromAxisAngle(Z_AXIS, -x / BALL_R);
       halo.material.opacity = 0.09 + Math.sin(t * 3) * 0.03;
     } else if (mode === "idle") {
       state.blower = 0.12;
     }
 
     if (state.mode === "idle" || state.mode === "mixing") state.pushed = false;
+
+    // LEDs breathe at rest, race while the air is on, and flare for the winner.
+    led.emissiveIntensity =
+      state.mode === "mixing" || state.mode === "return"
+        ? 1.2 + Math.abs(Math.sin(clock * 10)) * 1.4
+        : state.mode === "present"
+          ? 1.9 + Math.sin(clock * 4) * 0.35
+          : 1.05 + Math.sin(clock * 1.4) * 0.2;
+    deckGlow.emissiveIntensity = led.emissiveIntensity * 0.5;
 
     // Physics substeps for stability at low frame rates.
     const sub = 2;
@@ -649,7 +947,6 @@ function createEngine(host, callbacks) {
       cam.target.lerpVectors(cam.fromTarget, cam.toTarget, e);
     }
     // Slow sway around the machine while it's not presenting the winner.
-    clock += dt;
     const swayAmt = state.mode === "present" || state.mode === "rise" ? 0 : state.mode === "idle" ? 1 : 0.5;
     swayNow += (swayAmt - swayNow) * Math.min(1, dt * 1.5);
     camera.position.copy(cam.pos);
@@ -659,6 +956,12 @@ function createEngine(host, callbacks) {
   };
 
   // ---- sizing / loop / teardown ------------------------------------------
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.45, 0.9);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
   const fit = () => {
     const w = host.clientWidth || 1;
     const h = host.clientHeight || 1;
@@ -666,22 +969,41 @@ function createEngine(host, callbacks) {
     composer.setSize(w, h);
     bloom.resolution.set(w, h);
     camera.aspect = w / h;
-    // Fit the whole machine (y from -1.35 to 1.55) vertically, and the globe
-    // horizontally on narrow screens.
-    const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
-    const dist = Math.max(1.72 / Math.tan(halfFov), 1.18 / (Math.tan(halfFov) * camera.aspect));
-    camHome.pos.z = dist;
-    if (state.mode === "idle" || state.mode === "mixing" || state.mode === "settle") {
-      cam.toPos.z = dist;
-      if (cam.t >= 1) cam.pos.z = dist;
-    }
     camera.updateProjectionMatrix();
+
+    // Frame the machine: project its extremes from the home viewpoint, then
+    // re-centre and adjust the distance until they fill ~92% of the height
+    // and at most ~86% of the width (room for the idle sway).
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    let dist = 7;
+    let targetY = VIEW_MID;
+    for (let i = 0; i < 5; i++) {
+      camera.position.set(0, targetY + CAM_ELEVATION, dist);
+      camera.lookAt(0, targetY, 0);
+      camera.updateMatrixWorld();
+      let minY = Infinity;
+      let maxY = -Infinity;
+      let maxX = 0;
+      for (const p of FRAME_POINTS) {
+        tmp.copy(p).project(camera);
+        minY = Math.min(minY, tmp.y);
+        maxY = Math.max(maxY, tmp.y);
+        maxX = Math.max(maxX, Math.abs(tmp.x));
+      }
+      targetY += ((maxY + minY) / 2) * dist * tanHalf;
+      dist *= Math.max((maxY - minY) / 2 / 0.92, maxX / 0.86);
+    }
+    camHome.pos.set(0, targetY + CAM_ELEVATION, dist);
+    camHome.target.set(0, targetY, 0);
+    if (state.mode !== "rise" && state.mode !== "present") {
+      cam.toPos.copy(camHome.pos);
+      cam.toTarget.copy(camHome.target);
+      if (cam.t >= 1) {
+        cam.pos.copy(camHome.pos);
+        cam.target.copy(camHome.target);
+      }
+    }
   };
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.42, 0.45, 0.9);
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
 
   const ro = new ResizeObserver(fit);
   ro.observe(host);
@@ -794,7 +1116,115 @@ function ballTexture(p, fontFamily) {
   return tex;
 }
 
-/** Radial gradient (centre -> edge) for glows and light pools. */
+const BOARD_PX = 1024;
+
+/**
+ * The cabinet's scoreboard: a dark LED panel with the Blackdog logo on the
+ * left and an eyebrow + headline on the right. `map` is the panel as lit;
+ * `glow` holds only the lettering, used as the emissive map so the text
+ * shines (and blooms) while the panel stays dark.
+ */
+function createBoard(fontFamily, width, height) {
+  const W = BOARD_PX;
+  const H = Math.round((BOARD_PX * height) / width);
+  const mapCanvas = document.createElement("canvas");
+  const glowCanvas = document.createElement("canvas");
+  mapCanvas.width = glowCanvas.width = W;
+  mapCanvas.height = glowCanvas.height = H;
+  const m = mapCanvas.getContext("2d");
+  const g = glowCanvas.getContext("2d");
+  const map = new THREE.CanvasTexture(mapCanvas);
+  const glow = new THREE.CanvasTexture(glowCanvas);
+  map.colorSpace = glow.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = glow.anisotropy = 8;
+
+  let logo = null;
+  let eyebrow = "";
+  let headline = "";
+
+  const paint = () => {
+    // Panel.
+    const bg = m.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#121218");
+    bg.addColorStop(1, "#07070a");
+    m.fillStyle = bg;
+    m.fillRect(0, 0, W, H);
+    m.fillStyle = "rgba(255,255,255,0.035)";
+    for (let y = 6; y < H; y += 9) for (let x = 6; x < W; x += 9) m.fillRect(x, y, 2, 2);
+    m.strokeStyle = "rgba(119,221,175,0.35)";
+    m.lineWidth = 3;
+    m.beginPath();
+    m.roundRect(6, 6, W - 12, H - 12, 18);
+    m.stroke();
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, W, H);
+
+    // Logo.
+    const pad = 30;
+    const logoH = H - pad * 2 - 12;
+    let x = pad + 14;
+    if (logo) {
+      const logoW = (logoH * logo.naturalWidth) / logo.naturalHeight;
+      m.drawImage(logo, x, (H - logoH) / 2, logoW, logoH);
+      x += logoW;
+    } else x += logoH * 0.93;
+    x += 30;
+    m.fillStyle = "rgba(119,221,175,0.55)";
+    m.fillRect(x, pad + 12, 3, H - pad * 2 - 24);
+    g.fillStyle = "rgba(119,221,175,0.35)";
+    g.fillRect(x, pad + 12, 3, H - pad * 2 - 24);
+    x += 34;
+
+    // Lettering, drawn on both canvases.
+    const avail = W - x - pad - 10;
+    const text = (ctx, color, str, size, weight, spacing, y) => {
+      ctx.font = `${weight} ${size}px ${fontFamily}`;
+      ctx.letterSpacing = spacing;
+      ctx.fillStyle = color;
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(str, x, y);
+    };
+    let size = 92;
+    m.font = `800 ${size}px ${fontFamily}`;
+    m.letterSpacing = "1px";
+    while (m.measureText(headline).width > avail && size > 36) {
+      size -= 4;
+      m.font = `800 ${size}px ${fontFamily}`;
+    }
+    const eyebrowY = H * 0.38;
+    const headlineY = H * 0.38 + size * 0.95;
+    text(m, "#77ddaf", eyebrow, 28, 800, "7px", eyebrowY);
+    text(g, "#77ddaf", eyebrow, 28, 800, "7px", eyebrowY);
+    text(m, "#f4fff9", headline, size, 800, "1px", headlineY);
+    text(g, "#e6fff3", headline, size, 800, "1px", headlineY);
+
+    map.needsUpdate = true;
+    glow.needsUpdate = true;
+  };
+
+  const img = new Image();
+  img.onload = () => {
+    logo = img;
+    paint();
+  };
+  img.src = "/assets/black_dog_logo.png";
+  document.fonts?.ready.then(paint);
+
+  return {
+    map,
+    glow,
+    width,
+    height,
+    set(nextEyebrow, nextHeadline) {
+      if (nextEyebrow === eyebrow && nextHeadline === headline) return;
+      eyebrow = nextEyebrow;
+      headline = nextHeadline;
+      paint();
+    },
+  };
+}
+
+/** Radial gradient (centre -> edge) for glows, light pools and fades. */
 function radialTexture(inner, outer) {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
