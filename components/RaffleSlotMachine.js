@@ -11,12 +11,12 @@ import { plural } from "@/lib/format";
 import {
   isSoundEnabled,
   isSoundEnabledOnServer,
-  playFanfare,
-  playScratch,
-  playSniff,
   playThunk,
   playTick,
+  playWinnerSting,
+  prefetchSounds,
   setSoundEnabled,
+  sfx,
   startDrumroll,
   subscribeSound,
   unlockAudio,
@@ -76,6 +76,15 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
   // Never leave a drumroll running if the component goes away mid-draw.
   useEffect(() => () => stopRoll.current?.(false), []);
 
+  // Fetch the recorded sounds once the page has settled, so the first bark is instant.
+  useEffect(() => {
+    if (!isSoundEnabled()) return;
+    const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500));
+    const cancel = window.cancelIdleCallback ?? clearTimeout;
+    const id = idle(() => prefetchSounds());
+    return () => cancel(id);
+  }, []);
+
   const players = participants.length;
   const busy = phase === "drawing" || phase === "spinning";
 
@@ -94,14 +103,17 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
     );
   }, [renderer]);
 
-  // The scene calls this when the search starts: drumroll until the reveal.
-  const suspense = useCallback((on) => {
+  // The scene calls this when the search starts (drumroll until the reveal),
+  // and with "climax" for the last second before the bone is flipped.
+  const suspense = useCallback((state) => {
+    if (state === "climax") return stopRoll.current?.climax();
     stopRoll.current?.(false);
-    stopRoll.current = on ? startDrumroll() : null;
+    stopRoll.current = state ? startDrumroll() : null;
   }, []);
 
-  // Called by whichever visual is running, the moment the winner is revealed.
-  const landed = useCallback(() => {
+  // Called by whichever visual is running, the moment the winner is revealed
+  // (with the seasonal skin that's showing, if any).
+  const landed = useCallback((theme = null) => {
     if (stopRoll.current) {
       stopRoll.current(true); // finish the drumroll on a cymbal crash
       stopRoll.current = null;
@@ -109,14 +121,16 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
       playThunk();
     }
     landingFx();
+    if (renderer === "scene") sfx.happyBarks(0.12);
     setTimeout(() => {
       celebrate();
-      playFanfare();
+      playWinnerSting(theme);
     }, 180);
+    if (renderer === "scene") setTimeout(() => sfx.pant(), 1900);
     setPhase("landed");
     onWinnerRef.current?.(result.current);
     setTimeout(() => setReveal(result.current), 900);
-  }, [landingFx]);
+  }, [landingFx, renderer]);
 
   const clack = useCallback((speed) => playTick(0.35 + speed * 0.5), []);
 
@@ -279,15 +293,7 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
             ) : (
               <>
                 {renderer === "scene" && (
-                  <DogFetch
-                    participants={participants}
-                    onReady={setScene}
-                    onLanded={landed}
-                    onClack={clack}
-                    onScratch={playScratch}
-                    onSniff={playSniff}
-                    onSuspense={suspense}
-                  />
+                  <DogFetch participants={participants} onReady={setScene} onLanded={landed} onSuspense={suspense} />
                 )}
                 {showShuffle && (
                   <div className="absolute inset-0 bg-ink-950">

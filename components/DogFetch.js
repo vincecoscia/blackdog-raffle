@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { sfx } from "@/lib/sound";
 import {
   DEFAULT_MOON,
   HEART,
@@ -23,19 +24,22 @@ import {
  * The winner's bone never moves to a special place and the dig spot is random,
  * so nothing on screen hints at the result before the flip.
  *
+ * Between draws the dog can be petted (click it) and bones poked. Sounds come
+ * from lib/sound (recorded barks and clacks, plus synthesised effects).
+ *
  * Everything is SVG, built and animated imperatively in one
  * requestAnimationFrame loop — React only provides the host element. The
  * engine hands { draw, reset } to the parent via `onReady` (this is loaded
  * through next/dynamic, which doesn't forward refs).
  */
-export default function DogFetch({ participants, onReady, onLanded, onClack, onScratch, onSniff, onSuspense }) {
+export default function DogFetch({ participants, onReady, onLanded, onSuspense }) {
   const host = useRef(null);
   const engine = useRef(null);
-  const callbacks = useRef({ onReady, onLanded, onClack, onScratch, onSniff, onSuspense });
+  const callbacks = useRef({ onReady, onLanded, onSuspense });
 
   useEffect(() => {
-    callbacks.current = { onReady, onLanded, onClack, onScratch, onSniff, onSuspense };
-  }, [onReady, onLanded, onClack, onScratch, onSniff, onSuspense]);
+    callbacks.current = { onReady, onLanded, onSuspense };
+  }, [onReady, onLanded, onSuspense]);
 
   useEffect(() => {
     const e = createEngine(host.current, callbacks);
@@ -182,6 +186,8 @@ function createEngine(host, callbacks) {
 
   // ---- svg + stage -----------------------------------------------------------
   const svg = el("svg", { width: "100%", height: "100%", style: "position:absolute;inset:0;display:block" }, host);
+  el("style", {}, svg).textContent =
+    '[data-part="dog"],[data-bone]{cursor:pointer}.df-busy [data-part="dog"],.df-busy [data-bone]{cursor:default}';
   const defs = el("defs", {}, svg);
   const radial = (id, stops, attrs = {}) => {
     const g = el("radialGradient", { id, ...attrs }, defs);
@@ -471,8 +477,9 @@ function createEngine(host, callbacks) {
     }
   };
 
+  const boneByNode = new WeakMap();
   const makeBone = (id, label) => {
-    const g = el("g", {}, pileLayer);
+    const g = el("g", { "data-bone": "" }, pileLayer);
     const glow = el("path", { d: BONE_PATH, fill: "none", stroke: MINT, "stroke-width": 12, "stroke-linejoin": "round", opacity: 0 }, g);
     el("path", { d: BONE_PATH, fill: BONE_SHADE, transform: "translate(0 4)" }, g);
     el("path", { d: BONE_PATH, fill: BONE, stroke: BONE_LINE, "stroke-width": 2, "stroke-linejoin": "round" }, g);
@@ -507,7 +514,9 @@ function createEngine(host, callbacks) {
       el("ellipse", { cx: 0, cy: 3, rx: 7, ry: 6 }, paw);
       for (const [x, y] of [[-8, -4], [-3, -8.5], [3, -8.5], [8, -4]]) el("circle", { cx: x, cy: y, r: 3 }, paw);
     }
-    return { id, g, glow, text, mystery, x: 0, y: -BONE_REST, r: 0, sx: 1, vx: 0, vy: 0, vr: 0, mode: "rest" };
+    const bone = { id, g, glow, text, mystery, x: 0, y: -BONE_REST, r: 0, sx: 1, vx: 0, vy: 0, vr: 0, mode: "rest" };
+    boneByNode.set(g, bone);
+    return bone;
   };
 
   const placeBone = (b, jx = 0, jy = 0) => b.g.setAttribute("transform", tf(b.x + jx, b.y + jy, b.r, b.sx, 1));
@@ -588,6 +597,16 @@ function createEngine(host, callbacks) {
     node: el("path", { d: STAR_PATH, fill: MINT, opacity: 0 }, fxLayer),
     life: 0,
   }));
+  const hearts = Array.from({ length: 8 }, () => ({
+    node: el("path", { d: HEART, fill: "#ff7aa8", opacity: 0 }, fxLayer),
+    life: 0,
+  }));
+  const heart = () => {
+    const h = hearts.find((q) => q.life <= 0);
+    if (!h) return;
+    const [hx, hy] = toWorld(dog.headTop);
+    Object.assign(h, { x: hx + rand(-24, 24), y: hy + 40, life: 1, drift: rand(-25, 25) });
+  };
   const sparkle = (x, y) => {
     const s = sparkles.find((q) => q.life <= 0);
     if (!s) return;
@@ -606,14 +625,16 @@ function createEngine(host, callbacks) {
     bang.textContent = char;
     bang.setAttribute("fill", char === "?" ? "#ffffff" : MINT);
     bangT = 0;
+    if (char === "?") sfx.whine();
+    else sfx.ting();
   };
 
   let lastClack = 0;
   const clack = (v) => {
     const now = performance.now();
-    if (now - lastClack < 45) return;
+    if (now - lastClack < 35) return;
     lastClack = now;
-    callbacks.current.onClack?.(clamp(v, 0.1, 1));
+    sfx.clack(clamp(v, 0.1, 1));
   };
 
   // Seasonal hat/neckwear (shared with the winner card) + the scene's own effects.
@@ -704,6 +725,7 @@ function createEngine(host, callbacks) {
   let presentT = 0;
   let nextBlink = 2;
   let lastVariant = null;
+  let cursorMode = null;
 
   const call = (fn) => ({ start: fn, dur: 0 });
   const wait = (dur) => ({ dur });
@@ -738,6 +760,12 @@ function createEngine(host, callbacks) {
       return k >= 1;
     },
   });
+  /** Advance the gait; each footfall (twice per stride) gets a soft paw sound. */
+  const stepPhase = (moved, loudness) => {
+    const before = Math.floor(dog.phase / Math.PI);
+    dog.phase += (moved / GAIT_LENGTH) * Math.PI * 2;
+    if (Math.floor(dog.phase / Math.PI) !== before && moved > 0.5) sfx.paw(loudness);
+  };
   const moveTo = (x, speed, { gaitCap = 1, ease = true } = {}) => ({
     start() {
       this.x0 = dog.x;
@@ -749,7 +777,7 @@ function createEngine(host, callbacks) {
       dog.x = lerp(this.x0, x, ease ? easeInOut(k) : k);
       const moved = Math.abs(dog.x - prev);
       dog.speed = dt > 0 ? moved / dt : 0;
-      dog.phase += (moved / GAIT_LENGTH) * Math.PI * 2;
+      stepPhase(moved, clamp(dog.speed / 650, 0.15, 1));
       dog.gait = Math.min(gaitCap, clamp(dog.speed / 120, 0, 1));
       dog.lean = clamp(dog.speed / 300, 0, 1);
       if (k >= 1) {
@@ -768,6 +796,7 @@ function createEngine(host, callbacks) {
       this.x1 = x ?? dog.x;
       this.y0 = dog.y;
       this.mid = false;
+      if (height > 60) sfx.whoosh(clamp(height / 200, 0.4, 1));
     },
     update(t) {
       const k = Math.min(1, t / dur);
@@ -782,22 +811,26 @@ function createEngine(host, callbacks) {
         dog.air = 0;
         dog.y = 0;
         dog.squash = 1;
-        clack(0.45);
         for (let i = 0; i < 5; i++) puff(dog.x + rand(-60, 60), -6, rand(-120, 120), rand(-80, -20));
-        onLand?.();
+        // A custom landing (the cannonball) brings its own sound.
+        if (onLand) onLand();
+        else sfx.thud(height > 150);
       }
       return k >= 1;
     },
   });
   const skid = () => ({
     start() {
-      callbacks.current.onScratch?.();
+      sfx.skid();
       dog.squash = 0.7;
       for (let i = 0; i < 7; i++) puff(dog.x + dog.facing * rand(-10, 70), -6, dog.facing * rand(40, 180), rand(-100, -30));
     },
     dur: 0.25,
   });
   const headShake = (dur) => ({
+    start() {
+      sfx.earFlap();
+    },
     update(t) {
       const k = Math.min(1, t / dur);
       dog.tilt = 0.24 * Math.sin(t * 30) * (1 - k);
@@ -819,12 +852,12 @@ function createEngine(host, callbacks) {
       const k = Math.min(1, t / this.dur);
       const prev = dog.x;
       dog.x = lerp(this.x0, x, k);
-      dog.phase += (Math.abs(dog.x - prev) / GAIT_LENGTH) * Math.PI * 2;
+      stepPhase(Math.abs(dog.x - prev), 0.1);
       dog.gait = 0.7;
       this.next -= dt;
       if (this.next <= 0) {
         this.next = rand(0.4, 0.65);
-        callbacks.current.onSniff?.();
+        sfx.sniff();
         const [nx, ny] = toWorld(dog.nose);
         for (let i = 0; i < 2; i++) puff(nx, ny, dog.facing * rand(-30, 40), rand(-60, -20), rand(2.5, 4));
       }
@@ -865,6 +898,7 @@ function createEngine(host, callbacks) {
   const launch = (b, dir, speed = rand(640, 880)) => {
     frontLayer.appendChild(b.g);
     Object.assign(b, { mode: "fly", vx: dir * speed, vy: rand(-680, -540), vr: rand(-14, 14) });
+    sfx.whoosh(0.3);
     for (let i = 0; i < 3; i++) puff(b.x + rand(-20, 20), b.y + 10, dir * rand(40, 160), rand(-120, -40));
   };
 
@@ -930,7 +964,7 @@ function createEngine(host, callbacks) {
           b.tween = { from: b.fromPile ? { x: mx, y: my + 36, r: 0 } : { x: b.x, y: b.y, r: b.r }, t: 0 };
           b.fromPile = false;
           b.mode = "held";
-          clack(0.7);
+          sfx.clack(0.85);
           for (let i = 0; i < 6; i++) puff(mx + rand(-30, 30), my + 10, rand(-90, 90), rand(-170, -60));
         }
         const k = Math.min(1, (t - 0.32) / 0.45);
@@ -951,7 +985,8 @@ function createEngine(host, callbacks) {
       const b = held;
       held = null;
       Object.assign(b, { mode: "fly", vx: -dog.facing * rand(360, 520), vy: -rand(700, 820), vr: rand(-18, 18) });
-      clack(0.4);
+      sfx.whoosh(0.6);
+      sfx.wahwah();
     });
 
   /** Flip the held bone over to reveal the name. The big moment. */
@@ -980,7 +1015,7 @@ function createEngine(host, callbacks) {
       presentT = 0;
       dog.wagSpeed = 13;
       dog.wagAmp = 0.35;
-      callbacks.current.onLanded?.();
+      callbacks.current.onLanded?.(theme);
     },
   });
 
@@ -998,6 +1033,7 @@ function createEngine(host, callbacks) {
   const intro = () => [
     call(() => {
       pop("!");
+      sfx.bark();
       dog.wagSpeed = 18;
       dog.wagAmp = 0.45;
       dog.extraHead = 0;
@@ -1006,6 +1042,7 @@ function createEngine(host, callbacks) {
     jump(null, 26, 0.34),
     call(shuffle),
     // Play bow while the bones settle.
+    call(() => sfx.yip({ delay: 0.15 })),
     blend({ dig: 0.55, extraNeck: -0.55, extraHead: -0.65, wiggle: 1 }, 0.3),
     wait(rand(0.9, 1.3)),
     blend({ dig: 0, extraNeck: 0, extraHead: 0, wiggle: 0 }, 0.25),
@@ -1067,6 +1104,7 @@ function createEngine(host, callbacks) {
           call(() => pop("!")),
           wait(1.1),
           blend({ pawUp: 0, tailStiff: 0, extraNeck: 0, extraHead: 0 }, 0.12),
+          call(() => sfx.woof({ gain: 0.6 })),
           jump(stop - 90, 80, 0.45),
           blend({ dig: 1 }, 0.2),
           dig(rand(1.1, 1.5), 3),
@@ -1082,11 +1120,12 @@ function createEngine(host, callbacks) {
           blend({ dig: 0.35, wiggle: 1 }, 0.25),
           wait(0.45),
           blend({ dig: 0, wiggle: 0 }, 0.1),
+          call(() => sfx.woof()),
           jump(impact + 40, 190, 0.85, {
             onLand: () => {
               setDogBehindPile(true);
               cam.shake = 1;
-              clack(1);
+              sfx.avalanche();
               // Throw clear of the spotlight to the right, or off stage left.
               for (const b of topBonesNear(impact, 220, 10)) {
                 const dir = Math.sign(b.x - impact) || 1;
@@ -1099,6 +1138,7 @@ function createEngine(host, callbacks) {
           dig(rand(1.8, 2.4), 0, { rustleAt: impact }),
           grab(mysteryBone),
           turnTo(1),
+          call(() => sfx.yip()),
           jump(PILE_X + PILE_HALF + 90, 160, 0.8, { onMid: () => setDogBehindPile(false) }),
         ];
       }
@@ -1112,7 +1152,10 @@ function createEngine(host, callbacks) {
   const outro = (variant) => {
     const reveal = [
       blend({ sit: 1, extraHead: 0 }, 0.4),
-      call(() => (camMode = "present")),
+      call(() => {
+        camMode = "present";
+        callbacks.current.onSuspense?.("climax"); // drumroll at full tilt
+      }),
       wait(1.0),
       flip(),
     ];
@@ -1120,6 +1163,7 @@ function createEngine(host, callbacks) {
       // Victory lap with the bone before sitting down.
       return [
         turnTo(1),
+        call(() => sfx.yip()),
         runTo(SPOT_X + 290, 650),
         skid(),
         turnTo(-1),
@@ -1145,6 +1189,8 @@ function createEngine(host, callbacks) {
       pending = null;
     }
     winnerInfo = winner;
+    petHop = null;
+    dog.y = 0;
     const variant = pickVariant();
     lastVariant = variant;
     mode = "busy";
@@ -1155,6 +1201,50 @@ function createEngine(host, callbacks) {
     queue = [...intro(), ...search(variant), ...outro(variant)];
     step = null;
   };
+
+  // ---- petting (between draws) ------------------------------------------------------
+  let petHop = null;
+  let lastPet = 0;
+  let petStreak = 0;
+  const petDog = () => {
+    if (mode === "busy") return;
+    const now = performance.now();
+    if (now - lastPet < 380) return;
+    petStreak = now - lastPet < 1600 ? petStreak + 1 : 1;
+    lastPet = now;
+    if (petStreak >= 5) {
+      // Five quick pets: a happy howl and a flurry of hearts.
+      petStreak = 0;
+      sfx.howl();
+      for (let i = 0; i < 4; i++) setTimeout(heart, i * 130);
+    } else {
+      (Math.random() < 0.5 ? sfx.bark : sfx.yip)();
+      heart();
+    }
+    dog.wagSpeed = 22;
+    dog.wagAmp = 0.55;
+    petHop = { t: 0 };
+  };
+  const pokeBone = (b) => {
+    if (b === held) return petDog();
+    if (mode === "busy" || b.mode !== "rest") return;
+    b.mode = "hop";
+    b.hop = { t: 0, y: b.y, r: b.r, spin: rand(-0.35, 0.35) };
+    sfx.clack(0.5);
+  };
+  dogRoot.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    petDog();
+  });
+  const onBonePointer = (e) => {
+    const g = e.target.closest?.("[data-bone]");
+    const b = g && boneByNode.get(g);
+    if (!b) return;
+    e.preventDefault();
+    pokeBone(b);
+  };
+  pileLayer.addEventListener("pointerdown", onBonePointer);
+  frontLayer.addEventListener("pointerdown", onBonePointer);
 
   const reset = () => {
     queue = [];
@@ -1224,7 +1314,7 @@ function createEngine(host, callbacks) {
         const rest = -BONE_REST;
         if (b.y > rest) {
           b.y = rest;
-          if (b.vy > 140) clack(b.vy / 900);
+          if (b.vy > 140) clack(Math.min(0.75, b.vy / 1300));
           b.vy = -b.vy * 0.3;
           b.vx *= 0.55;
           b.vr *= 0.4;
@@ -1258,6 +1348,19 @@ function createEngine(host, callbacks) {
           b.r = wobble;
         }
         placeBone(b);
+      } else if (b.mode === "hop") {
+        const h = b.hop;
+        h.t += dt;
+        const k = Math.min(1, h.t / 0.34);
+        b.y = h.y - 30 * 4 * k * (1 - k);
+        b.r = h.r + h.spin * Math.sin(Math.PI * k);
+        if (k >= 1) {
+          b.y = h.y;
+          b.r = h.r;
+          b.mode = "rest";
+          clack(0.3);
+        }
+        placeBone(b);
       } else if (rustle && Math.abs(b.x - rustle.x) < 180) {
         placeBone(b, rand(-3, 3), rand(-3, 3));
       }
@@ -1283,6 +1386,15 @@ function createEngine(host, callbacks) {
       const scale = s.size * Math.sin(Math.PI * clamp(1 - s.life, 0, 1));
       s.node.setAttribute("transform", tf(s.x, s.y, s.spin * (1 - s.life), scale, scale));
       s.node.setAttribute("opacity", Math.max(0, s.life).toFixed(2));
+    }
+    for (const h of hearts) {
+      if (h.life <= 0) continue;
+      h.life -= dt * 0.9;
+      h.y -= 70 * dt;
+      h.x += h.drift * dt;
+      const sc = 1.7 * (1 + (1 - h.life) * 0.4);
+      h.node.setAttribute("transform", tf(h.x, h.y, 0, sc, sc));
+      h.node.setAttribute("opacity", Math.max(0, Math.min(1, h.life * 1.6)).toFixed(2));
     }
     if (bangT >= 0) {
       bangT += dt;
@@ -1320,7 +1432,7 @@ function createEngine(host, callbacks) {
       const before = Math.floor(dog.scratchPhase / Math.PI);
       dog.scratchPhase += dt * 15;
       if (Math.floor(dog.scratchPhase / Math.PI) !== before) {
-        callbacks.current.onScratch?.();
+        sfx.scratch();
         const [px, py] = toWorld([digReach + 12, -10]);
         puff(px, py - rand(0, 20), -dog.facing * rand(20, 120), rand(-170, -80));
       }
@@ -1354,6 +1466,23 @@ function createEngine(host, callbacks) {
     if (mode === "idle") {
       dog.wagSpeed = lerp(dog.wagSpeed, 3, dt);
       dog.wagAmp = lerp(dog.wagAmp, 0.15, dt);
+    } else if (mode === "present") {
+      dog.wagSpeed = lerp(dog.wagSpeed, 13, dt);
+      dog.wagAmp = lerp(dog.wagAmp, 0.35, dt);
+    }
+    if (petHop) {
+      petHop.t += dt;
+      const k = Math.min(1, petHop.t / 0.3);
+      dog.y = -14 * 4 * k * (1 - k);
+      if (k >= 1) {
+        dog.y = 0;
+        dog.squash = 0.6;
+        petHop = null;
+      }
+    }
+    if (mode !== cursorMode) {
+      svg.classList.toggle("df-busy", mode === "busy");
+      cursorMode = mode;
     }
     if (mode === "present" && held) {
       presentT += dt;

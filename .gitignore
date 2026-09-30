@@ -39,3 +39,6 @@ next-env.d.ts
 .vercel
 .env*
 !.env.example
+
+# sound build cache (scripts/build-sounds.py)
+/.sound-cache/
