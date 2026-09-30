@@ -20,7 +20,8 @@
     "next-auth": "^4.24.15",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-toastify": "^11.1.0"
+    "react-toastify": "^11.1.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
