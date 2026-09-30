@@ -3,22 +3,27 @@ import { useEffect, useRef } from "react";
 /**
  * The draw, as a 2D cartoon: a black dog sits in the spotlight next to a pile
  * of bones — one per teammate, their name printed on it. `draw(winner)`
- * shuffles the pile, sends the dog over to dig (flinging bones behind it),
- * and has it pull out the winner's bone, trot back and sit to show it off.
+ * shuffles the pile, then plays one of several routines (dig, go around the
+ * back, fake-out, sniff-and-pounce, cannonball, zoomies) in which the dog
+ * pulls a mystery bone out of the pile, carries it back, sits, and flips it
+ * over to reveal the winner's name.
+ *
+ * The winner's bone never moves to a special place and the dig spot is random,
+ * so nothing on screen hints at the result before the flip.
  *
  * Everything is SVG, built and animated imperatively in one
  * requestAnimationFrame loop — React only provides the host element. The
  * engine hands { draw, reset } to the parent via `onReady` (this is loaded
  * through next/dynamic, which doesn't forward refs).
  */
-export default function DogFetch({ participants, onReady, onLanded, onClack, onScratch }) {
+export default function DogFetch({ participants, onReady, onLanded, onClack, onScratch, onSniff, onSuspense }) {
   const host = useRef(null);
   const engine = useRef(null);
-  const callbacks = useRef({ onReady, onLanded, onClack, onScratch });
+  const callbacks = useRef({ onReady, onLanded, onClack, onScratch, onSniff, onSuspense });
 
   useEffect(() => {
-    callbacks.current = { onReady, onLanded, onClack, onScratch };
-  }, [onReady, onLanded, onClack, onScratch]);
+    callbacks.current = { onReady, onLanded, onClack, onScratch, onSniff, onSuspense };
+  }, [onReady, onLanded, onClack, onScratch, onSniff, onSuspense]);
 
   useEffect(() => {
     const e = createEngine(host.current, callbacks);
@@ -57,13 +62,14 @@ const FONT = "font-family: var(--font-bricolage), var(--font-inter), ui-sans-ser
 // ---------------------------------------------------------------------------
 const PILE_X = -330;
 const PILE_HALF = 230;
-const WINNER_X = PILE_X + 120; // the winner is buried on the pile's right flank
 const SPOT_X = 150; // where the dog sits, in the spotlight
-const RUN_SPEED = 380;
+const RUN_SPEED = 400;
 const GRAVITY = 1500;
 const MIN_BONES = 22; // pad small rosters with blank bones so the pile looks full
 const BONE_REST = 26; // bone centre height when lying on the ground
-const CAM_HOME = { x: PILE_X - PILE_HALF - 75, y: -300, w: SPOT_X + 330 - (PILE_X - PILE_HALF - 75), h: 340 };
+const HOME_LEFT = PILE_X - PILE_HALF - 75;
+const CAM_HOME = { x: HOME_LEFT, y: -300, w: SPOT_X + 330 - HOME_LEFT, h: 340 };
+const VARIANTS = ["dig", "around", "fakeout", "sniffer", "cannonball", "zoomies"];
 
 // ---------------------------------------------------------------------------
 // Dog rig (dog-local units, facing +x; hips frame origin at the hip pivot)
@@ -76,6 +82,7 @@ const FRONT_LEG = { L1: 48, L2: 44, W1: 22, W2: 15 };
 const REAR_LEG = { L1: 48, L2: 46, W1: 30, W2: 16 };
 const NECK_LEN = 56;
 const MOUTH = [46, 35]; // held-bone centre: clamped just under the muzzle
+const NOSE = [80, 0];
 const PAW_Y = -8;
 const STRIDE = 22;
 const LIFT = 16;
@@ -113,11 +120,29 @@ const deg = (r) => (r * 180) / Math.PI;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const easeOutBack = (t) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
 const rot = (x, y, a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
 const tf = (x, y, r = 0, sx = 1, sy = 1) =>
   `translate(${x.toFixed(2)} ${y.toFixed(2)}) rotate(${deg(r).toFixed(2)}) scale(${sx.toFixed(3)} ${sy.toFixed(3)})`;
+
+const queryParam = (name) => {
+  try {
+    return new URLSearchParams(window.location.search).get(name);
+  } catch {
+    return null;
+  }
+};
+
+/** Seasonal skin: `?theme=halloween|holiday|none` overrides the calendar. */
+function pickTheme() {
+  const q = queryParam("theme");
+  if (q === "none") return null;
+  if (q === "halloween" || q === "holiday") return q;
+  const month = new Date().getMonth();
+  return month === 9 ? "halloween" : month === 11 ? "holiday" : null;
+}
 
 /** Two-bone IK in the side plane. Angles: 0 = straight down, positive swings back. */
 function ik(A, T, L1, L2, kneeForward) {
@@ -141,6 +166,9 @@ function ik(A, T, L1, L2, kneeForward) {
 }
 
 function createEngine(host, callbacks) {
+  const theme = pickTheme();
+  const forcedVariant = VARIANTS.includes(queryParam("variant")) ? queryParam("variant") : null;
+
   // ---- svg + stage -----------------------------------------------------------
   const svg = el("svg", { width: "100%", height: "100%", style: "position:absolute;inset:0;display:block" }, host);
   const defs = el("defs", {}, svg);
@@ -152,11 +180,13 @@ function createEngine(host, callbacks) {
     ["0", "#10211b", 1],
     ["1", "#070709", 1],
   ], { cx: "55%", cy: "42%", r: "75%" });
-  radial("dfMoon", [
-    ["0", "#d8f5e8", 0.26],
-    ["0.72", "#bfeedb", 0.16],
-    ["1", "#9fe9cb", 0.1],
-  ]);
+  const MOONS = {
+    default: { ring: MINT, stops: [["0", "#d8f5e8", 0.26], ["0.72", "#bfeedb", 0.16], ["1", "#9fe9cb", 0.1]] },
+    halloween: { ring: "#ffb35c", stops: [["0", "#ffe2b0", 0.34], ["0.72", "#ffc274", 0.22], ["1", "#f59e3b", 0.13]] },
+    holiday: { ring: "#cfe3ff", stops: [["0", "#f2f8ff", 0.3], ["0.72", "#d9e9ff", 0.18], ["1", "#bcd6ff", 0.1]] },
+  };
+  const moon = MOONS[theme] ?? MOONS.default;
+  radial("dfMoon", moon.stops);
   radial("dfShadow", [
     ["0", "#000", 0.6],
     ["1", "#000", 0],
@@ -177,8 +207,8 @@ function createEngine(host, callbacks) {
     cy: -135,
     r: 215,
     fill: "none",
-    stroke: MINT,
-    "stroke-opacity": 0.28,
+    stroke: moon.ring,
+    "stroke-opacity": 0.3,
     "stroke-width": 1.5,
     "vector-effect": "non-scaling-stroke",
   }, back);
@@ -196,6 +226,7 @@ function createEngine(host, callbacks) {
   el("ellipse", { cx: PILE_X, cy: 3, rx: PILE_HALF + 50, ry: 14, fill: "url(#dfShadow)" }, back);
   const dogShadow = el("ellipse", { cx: SPOT_X, cy: 3, rx: 90, ry: 11, fill: "url(#dfShadow)" }, back);
 
+  const propsLayer = el("g", {}, world);
   const pileLayer = el("g", {}, world);
   const dogLayer = el("g", {}, world);
   const frontLayer = el("g", {}, world);
@@ -255,6 +286,7 @@ function createEngine(host, callbacks) {
   el("circle", { cx: 3.5, cy: -2, r: 1.4, fill: "#fff" }, eye);
   const ear = el("g", {}, head);
   el("path", { d: "M -4 0 C -22 2 -30 34 -18 54 C -10 60 2 40 8 8 Z", fill: EAR }, ear);
+  const hatSlot = el("g", {}, head);
 
   const nearRear = buildLeg(REAR_ATTACH, REAR_LEG, INK, true);
 
@@ -284,8 +316,6 @@ function createEngine(host, callbacks) {
     x: SPOT_X,
     y: 0,
     facing: 1,
-    sx: 1,
-    sy: 1,
     sit: 1,
     dig: 0,
     gait: 0,
@@ -297,11 +327,19 @@ function createEngine(host, callbacks) {
     extraHead: 0,
     tilt: 0,
     lean: 0,
+    air: 0, // 0..1 legs stretched out mid-jump
+    sniff: 0, // 0..1 nose to the ground
+    pawUp: 0, // 0..1 pointer pose: near front paw raised
+    tailStiff: 0, // 0..1 pointer pose: tail straight out
+    wiggle: 0, // 0..1 play-bow butt wiggle
+    squash: 0, // landing squash, decays
+    turnPulse: 0, // stretch while turning around
     wagSpeed: 3,
     wagAmp: 0.15,
     ear: 0.1,
     blink: 0,
     mouth: [0, 0],
+    nose: [0, 0],
     headTop: [0, 0],
   };
 
@@ -310,7 +348,7 @@ function createEngine(host, callbacks) {
     for (const k of POSE_KEYS) P[k] = lerp(lerp(POSES.stand[k], POSES.sit[k], dog.sit), POSES.dig[k], dog.dig);
     const breathe = Math.sin(clock * 2.2) * 1.5 * (1 - dog.gait);
     const hipH = P.hipH + Math.sin(dog.phase * 2) * 4 * dog.gait - 4 * dog.lean + breathe;
-    const p = P.p + 0.06 * dog.lean;
+    const p = P.p + 0.06 * dog.lean + 0.06 * Math.sin(clock * 22) * dog.wiggle;
     const cp = Math.cos(p);
     const sp = Math.sin(p);
     const toRoot = ([lx, ly]) => [HIP_X + lx * cp - ly * sp, -hipH + lx * sp + ly * cp];
@@ -341,57 +379,73 @@ function createEngine(host, callbacks) {
         tx += 26 * Math.sin(ph) * dog.scratch;
         ty -= 22 * Math.max(0, Math.cos(ph)) * dog.scratch;
       }
+      if (dog.air > 0) {
+        tx += (front ? 30 : -34) * dog.air;
+        ty -= (front ? 16 : 12) * dog.air;
+      }
+      if (front && !far && dog.pawUp > 0) {
+        tx -= 14 * dog.pawUp;
+        ty -= 38 * dog.pawUp;
+      }
       const { upper, lower } = ik(A, [tx, ty], leg.dims.L1, leg.dims.L2, !front);
       leg.top.setAttribute("transform", tf(leg.attach[0], leg.attach[1], upper - p));
       leg.knee.setAttribute("transform", tf(0, leg.dims.L1, lower - upper));
       leg.paw.setAttribute("transform", tf(0, leg.dims.L2, -lower));
     }
 
-    const neckW = P.n + dog.extraNeck;
-    const headW = P.h + dog.extraHead + dog.tilt;
+    const neckW = P.n + dog.extraNeck + 0.55 * dog.sniff;
+    const headW = P.h + dog.extraHead + dog.tilt + 0.5 * dog.sniff;
     neck.setAttribute("transform", tf(SHOULDER[0], SHOULDER[1], neckW - p));
     head.setAttribute("transform", tf(0, -NECK_LEN, headW - neckW));
     const S = toRoot(SHOULDER);
     const hp = [S[0] + NECK_LEN * Math.sin(neckW), S[1] - NECK_LEN * Math.cos(neckW)];
     const m = rot(MOUTH[0], MOUTH[1], headW);
+    const n = rot(NOSE[0], NOSE[1], headW);
     dog.mouth = [hp[0] + m[0], hp[1] + m[1]];
-    dog.headTop = [hp[0] + 10, hp[1] - 70];
+    dog.nose = [hp[0] + n[0], hp[1] + n[1]];
+    dog.headTop = [hp[0] + 10, hp[1] - (theme ? 110 : 70)];
 
     eye.setAttribute("transform", `translate(16 -9) scale(1 ${(1 - dog.blink * 0.88).toFixed(3)})`);
     ear.setAttribute("transform", tf(-6, -20, dog.ear));
-    tailRoot.setAttribute("transform", tf(-30, -14, P.tail));
+    tailRoot.setAttribute("transform", tf(-30, -14, lerp(P.tail, 0.08, dog.tailStiff)));
+    const curl = lerp(P.curl, 0, dog.tailStiff);
+    const wagAmp = dog.wagAmp * (1 - dog.tailStiff);
     tail.forEach((seg, i) => {
-      const wag = dog.wagAmp * Math.sin(clock * dog.wagSpeed - i * 0.8) * 0.5;
-      seg.setAttribute("transform", `rotate(${deg(P.curl + wag).toFixed(2)})`);
+      const wag = wagAmp * Math.sin(clock * dog.wagSpeed - i * 0.8) * 0.5;
+      seg.setAttribute("transform", `rotate(${deg(curl + wag).toFixed(2)})`);
     });
+    const sx = 1 + 0.06 * dog.squash;
+    const sy = (1 + 0.07 * dog.turnPulse) * (1 - 0.1 * dog.squash);
     dogRoot.setAttribute(
       "transform",
-      `translate(${dog.x.toFixed(2)} ${dog.y.toFixed(2)}) scale(${(dog.facing * dog.sx).toFixed(3)} ${dog.sy.toFixed(3)})`
+      `translate(${dog.x.toFixed(2)} ${dog.y.toFixed(2)}) scale(${(dog.facing * sx).toFixed(3)} ${sy.toFixed(3)})`
     );
 
     dogShadow.setAttribute("cx", (dog.x - dog.facing * 12).toFixed(1));
     dogShadow.setAttribute("rx", (96 - 26 * dog.sit).toFixed(1));
-    dogShadow.setAttribute("opacity", clamp(1 + dog.y / 60, 0.3, 1).toFixed(2));
+    dogShadow.setAttribute("opacity", clamp(1 + dog.y / 120, 0.2, 1).toFixed(2));
 
     // Speed lines trail the dog while it runs.
     const s = clamp((dog.speed - 150) / 250, 0, 1);
     speedLines.forEach((line, i) => {
-      const y = -58 - i * 26;
+      const y = dog.y - 58 - i * 26;
       const x0 = dog.x - dog.facing * (95 + i * 14);
       line.setAttribute("x1", x0.toFixed(1));
       line.setAttribute("x2", (x0 - dog.facing * (40 + i * 10)).toFixed(1));
-      line.setAttribute("y1", y);
-      line.setAttribute("y2", y);
+      line.setAttribute("y1", y.toFixed(1));
+      line.setAttribute("y2", y.toFixed(1));
       line.setAttribute("opacity", (s * (0.55 - i * 0.12)).toFixed(2));
     });
   };
 
   /** Dog-local point → world. */
-  const toWorld = ([lx, ly]) => [dog.x + dog.facing * dog.sx * lx, dog.y + dog.sy * ly];
+  const toWorld = ([lx, ly]) => [dog.x + dog.facing * lx, dog.y + ly];
+  const setDogBehindPile = (behind) => world.insertBefore(dogLayer, behind ? pileLayer : frontLayer);
 
   // ---- bones -----------------------------------------------------------------
   let bones = [];
   let pending = null;
+  let labelMap = new Map();
 
   const labelsFor = (list) => {
     const counts = {};
@@ -416,9 +470,11 @@ function createEngine(host, callbacks) {
     el("path", { d: BONE_PATH, fill: BONE_SHADE, transform: "translate(0 4)" }, g);
     el("path", { d: BONE_PATH, fill: BONE, stroke: BONE_LINE, "stroke-width": 2, "stroke-linejoin": "round" }, g);
     el("path", { d: "M -30 -5.5 L 18 -5.5", stroke: "#fffaf0", "stroke-width": 3, "stroke-linecap": "round", opacity: 0.7 }, g);
+    let text = null;
+    let mystery = null;
     let underline = null;
     if (label) {
-      const text = el("text", {
+      text = el("text", {
         x: 0,
         y: 1.5,
         "text-anchor": "middle",
@@ -428,36 +484,49 @@ function createEngine(host, callbacks) {
       }, g);
       text.textContent = label;
       fitLabel(text);
-      underline = el("line", { x1: 0, x2: 0, y1: 10, y2: 10, stroke: MINT, "stroke-width": 2.5, "stroke-linecap": "round", opacity: 0 }, g);
       document.fonts?.ready.then(() => fitLabel(text));
+      mystery = el("text", {
+        x: 0,
+        y: 2,
+        "text-anchor": "middle",
+        "dominant-baseline": "central",
+        fill: BONE_INK,
+        opacity: 0,
+        style: `${FONT}; font-size: 24px`,
+      }, g);
+      mystery.textContent = "?";
+      underline = el("line", { x1: 0, x2: 0, y1: 10, y2: 10, stroke: MINT, "stroke-width": 2.5, "stroke-linecap": "round", opacity: 0 }, g);
     } else {
       // Blank bones get a paw print.
       const paw = el("g", { fill: "#c7b38c" }, g);
       el("ellipse", { cx: 0, cy: 3, rx: 7, ry: 6 }, paw);
       for (const [x, y] of [[-8, -4], [-3, -8.5], [3, -8.5], [8, -4]]) el("circle", { cx: x, cy: y, r: 3 }, paw);
     }
-    return { id, g, glow, underline, x: 0, y: -BONE_REST, r: 0, vx: 0, vy: 0, vr: 0, mode: "rest", slot: null, tween: null };
+    return { id, g, glow, text, mystery, underline, x: 0, y: -BONE_REST, r: 0, sx: 1, vx: 0, vy: 0, vr: 0, mode: "rest" };
   };
 
-  const placeBone = (b) => b.g.setAttribute("transform", tf(b.x, b.y, b.r));
+  const placeBone = (b, jx = 0, jy = 0) => b.g.setAttribute("transform", tf(b.x + jx, b.y + jy, b.r, b.sx, 1));
+  const setMystery = (b, on) => {
+    b.text?.setAttribute("opacity", on ? 0 : 1);
+    b.mystery?.setAttribute("opacity", on ? 1 : 0);
+  };
 
   /**
-   * Stack bones into a mound with a 1D height map: each bone rests on the
-   * highest point under it, tilted to follow the slope. The winner (if any)
-   * goes in about halfway through, on the right flank, with a few bones piled
-   * on top of it for the dog to dig away.
+   * Stack bones into a mound with a 1D height map: each bone tries a few
+   * spots, favouring low ones near the middle, rests on the highest point
+   * under it and tilts to follow the slope.
    */
   const HM_X0 = PILE_X - PILE_HALF - 90;
   const HM_CELL = 6;
   const HM_N = Math.ceil((2 * PILE_HALF + 180) / HM_CELL);
-  const layoutHeap = (list, winner) => {
+  const hmIdx = (x) => clamp(Math.round((x - HM_X0) / HM_CELL), 0, HM_N - 1);
+  const layoutHeap = (list) => {
     const hm = new Float32Array(HM_N);
-    const idx = (x) => clamp(Math.round((x - HM_X0) / HM_CELL), 0, HM_N - 1);
     const restOn = (cx, r) => {
       const half = 63 * Math.abs(Math.cos(r)) + 26 * Math.abs(Math.sin(r));
-      const i0 = idx(cx - half);
-      const im = idx(cx);
-      const i1 = idx(cx + half);
+      const i0 = hmIdx(cx - half);
+      const im = hmIdx(cx);
+      const i1 = hmIdx(cx + half);
       let hL = 0;
       let hR = 0;
       for (let k = i0; k <= im; k++) hL = Math.max(hL, hm[k]);
@@ -465,34 +534,17 @@ function createEngine(host, callbacks) {
       const base = Math.max(hL, hR) - Math.abs(hR - hL) * 0.35;
       return { half, i0, i1, hL, hR, base: Math.max(base, BONE_REST - 9) };
     };
-    const order = list.filter((b) => b !== winner).sort(() => Math.random() - 0.5);
-    let at = -1;
-    if (winner) {
-      at = Math.round(order.length * 0.5);
-      order.splice(at, 0, winner);
-    }
+    const order = [...list].sort(() => Math.random() - 0.5);
     order.forEach((b, i) => {
-      let cx;
-      let r;
-      if (b === winner) {
-        cx = WINNER_X + rand(-6, 6);
-        r = rand(-0.06, 0.06);
-      } else if (winner && i > at && i <= at + 3) {
-        cx = WINNER_X + rand(-45, 40);
-        r = rand(-0.45, 0.45);
-      } else {
-        // Try a few spots; favour low ones near the middle.
-        let best = null;
-        for (let c = 0; c < 6; c++) {
-          const x = PILE_X + rand(-1, 1) * PILE_HALF * 0.82;
-          const score = restOn(x, 0).base + Math.abs(x - PILE_X) * 0.3;
-          if (!best || score < best.score) best = { x, score };
-        }
-        cx = best.x;
-        r = rand(-0.5, 0.5);
+      let best = null;
+      for (let c = 0; c < 6; c++) {
+        const x = PILE_X + rand(-1, 1) * PILE_HALF * 0.82;
+        const score = restOn(x, 0).base + Math.abs(x - PILE_X) * 0.3;
+        if (!best || score < best.score) best = { x, score };
       }
-      const rest = restOn(cx, r);
-      r = clamp(-Math.atan2(rest.hR - rest.hL, 2 * rest.half) * 0.9 + r * 0.35, -0.7, 0.7);
+      const cx = best.x;
+      const rest = restOn(cx, rand(-0.5, 0.5));
+      const r = clamp(-Math.atan2(rest.hR - rest.hL, 2 * rest.half) * 0.9 + rand(-0.18, 0.18), -0.7, 0.7);
       // Bones nestle into the gaps (they're at different depths in the
       // pile), so each only adds about a third of its height.
       const centerH = rest.base + 9;
@@ -507,10 +559,10 @@ function createEngine(host, callbacks) {
 
   const rebuildBones = (list) => {
     for (const b of bones) b.g.remove();
-    const labels = labelsFor(list);
-    bones = list.map((p) => makeBone(p._id, labels.get(p._id)));
+    labelMap = labelsFor(list);
+    bones = list.map((p) => makeBone(p._id, labelMap.get(p._id)));
     for (let i = list.length; i < MIN_BONES; i++) bones.push(makeBone(`blank-${i}`, null));
-    for (const b of layoutHeap(bones, null)) {
+    for (const b of layoutHeap(bones)) {
       Object.assign(b, { x: b.slot.x, y: b.slot.y, r: b.slot.r, mode: "rest" });
       pileLayer.appendChild(b.g);
       placeBone(b);
@@ -518,14 +570,14 @@ function createEngine(host, callbacks) {
   };
 
   // ---- effects ---------------------------------------------------------------
-  const puffs = Array.from({ length: 28 }, () => ({
+  const puffs = Array.from({ length: 48 }, () => ({
     node: el("circle", { r: 0, fill: "#d7e8df", opacity: 0 }, fxLayer),
     life: 0,
   }));
-  const puff = (x, y, vx, vy) => {
+  const puff = (x, y, vx, vy, size = rand(4, 7)) => {
     const p = puffs.find((q) => q.life <= 0);
     if (!p) return;
-    Object.assign(p, { x, y, vx, vy, life: 1, size: rand(4, 7) });
+    Object.assign(p, { x, y, vx, vy, life: 1, size });
   };
   const sparkles = Array.from({ length: 14 }, () => ({
     node: el("path", { d: STAR_PATH, fill: MINT, opacity: 0 }, fxLayer),
@@ -544,8 +596,12 @@ function createEngine(host, callbacks) {
     opacity: 0,
     style: `${FONT}; font-size: 54px`,
   }, fxLayer);
-  bang.textContent = "!";
   let bangT = -1;
+  const pop = (char) => {
+    bang.textContent = char;
+    bang.setAttribute("fill", char === "?" ? "#ffffff" : MINT);
+    bangT = 0;
+  };
 
   let lastClack = 0;
   const clack = (v) => {
@@ -555,19 +611,28 @@ function createEngine(host, callbacks) {
     callbacks.current.onClack?.(clamp(v, 0.1, 1));
   };
 
+  const themeFx = buildTheme(theme, { back, propsLayer, fxLayer, hatSlot });
+
   // ---- camera ------------------------------------------------------------------
   let vw = 1;
   let vh = 1;
-  const cam = { s: 1, cx: 0, cy: 0, ready: false };
-  let camMode = "home";
-  let camFocus = SPOT_X;
+  const cam = { s: 1, cx: 0, cy: 0, shake: 0, ready: false };
+  let camMode = "home"; // home | present
 
   const camTarget = () => {
     let rect = CAM_HOME;
-    let focus = camFocus;
+    let focus = dog.x - 90;
     if (camMode === "present") {
       rect = { x: SPOT_X - 135, y: -285, w: 290, h: 300 };
       focus = SPOT_X + 10;
+    } else if (mode === "busy") {
+      // Frame the pile and wherever the dog is right now.
+      const left = Math.min(PILE_X - PILE_HALF - 50, dog.x - 200);
+      const right = Math.max(PILE_X + PILE_HALF + 80, dog.x + 210);
+      // Open up when the dog is airborne so jumps stay in frame.
+      const top = Math.min(-300, dog.y - 250);
+      rect = { x: left, y: top, w: right - left, h: 40 - top };
+      focus = dog.x;
     }
     const sH = vh / rect.h;
     let s = Math.min(sH, vw / rect.w);
@@ -590,35 +655,43 @@ function createEngine(host, callbacks) {
     if (!cam.ready) {
       Object.assign(cam, t, { ready: true });
     } else {
-      const k = 1 - Math.exp(-dt * 3.2);
+      const k = 1 - Math.exp(-dt * 2.6);
       cam.s = Math.exp(lerp(Math.log(cam.s), Math.log(t.s), k));
       cam.cx = lerp(cam.cx, t.cx, k);
       cam.cy = lerp(cam.cy, t.cy, k);
     }
+    cam.shake = Math.max(0, cam.shake - dt * 2.5);
+    const jx = cam.shake ? (rand(-1, 1) * 9 * cam.shake) / cam.s : 0;
+    const jy = cam.shake ? (rand(-1, 1) * 9 * cam.shake) / cam.s : 0;
     world.setAttribute(
       "transform",
-      `translate(${(vw / 2 - cam.cx * cam.s).toFixed(2)} ${(vh / 2 - cam.cy * cam.s).toFixed(2)}) scale(${cam.s.toFixed(4)})`
+      `translate(${(vw / 2 - (cam.cx + jx) * cam.s).toFixed(2)} ${(vh / 2 - (cam.cy + jy) * cam.s).toFixed(2)}) scale(${cam.s.toFixed(4)})`
     );
   };
 
-  // ---- timeline ----------------------------------------------------------------
+  // ---- timeline primitives -------------------------------------------------------
   let mode = "idle"; // idle | busy | present
   let queue = [];
   let step = null;
   let clock = 0;
-  let winnerBone = null;
+  let winnerInfo = null;
+  let held = null; // the bone in the dog's mouth
   let shuffleLeft = 0;
   let digLaunches = [];
+  let digDir = 1;
   let nextLaunch = 0;
+  let rustle = null;
   let presentT = 0;
   let nextBlink = 2;
+  let lastVariant = null;
 
   const call = (fn) => ({ start: fn, dur: 0 });
   const wait = (dur) => ({ dur });
   const waitFor = (pred) => ({ update: () => pred() });
+  /** Ease any numeric dog properties to target values. */
   const blend = (target, dur) => ({
     start() {
-      this.from = { sit: dog.sit, dig: dog.dig };
+      this.from = Object.fromEntries(Object.keys(target).map((k) => [k, dog[k]]));
     },
     update(t) {
       const k = easeInOut(Math.min(1, t / dur));
@@ -637,27 +710,27 @@ function createEngine(host, callbacks) {
       }
       const k = Math.min(1, t / 0.22);
       dog.facing = this.from * Math.cos(Math.PI * k);
-      dog.sy = 1 + 0.07 * Math.sin(Math.PI * k);
+      dog.turnPulse = Math.sin(Math.PI * k);
       if (k >= 1) {
         dog.facing = facing;
-        dog.sy = 1;
+        dog.turnPulse = 0;
       }
       return k >= 1;
     },
   });
-  const runTo = (x) => ({
+  const moveTo = (x, speed, { gaitCap = 1, ease = true } = {}) => ({
     start() {
       this.x0 = dog.x;
-      this.dur = Math.max(0.35, Math.abs(x - dog.x) / RUN_SPEED + 0.25);
+      this.dur = Math.max(0.3, Math.abs(x - dog.x) / speed + (ease ? 0.25 : 0));
     },
     update(t, dt) {
       const k = Math.min(1, t / this.dur);
       const prev = dog.x;
-      dog.x = lerp(this.x0, x, easeInOut(k));
+      dog.x = lerp(this.x0, x, ease ? easeInOut(k) : k);
       const moved = Math.abs(dog.x - prev);
       dog.speed = dt > 0 ? moved / dt : 0;
       dog.phase += (moved / GAIT_LENGTH) * Math.PI * 2;
-      dog.gait = clamp(dog.speed / 120, 0, 1);
+      dog.gait = Math.min(gaitCap, clamp(dog.speed / 120, 0, 1));
       dog.lean = clamp(dog.speed / 300, 0, 1);
       if (k >= 1) {
         dog.speed = 0;
@@ -667,67 +740,186 @@ function createEngine(host, callbacks) {
       return k >= 1;
     },
   });
+  const runTo = (x, speed = RUN_SPEED) => moveTo(x, speed);
+  /** Ballistic hop/jump; `x = null` hops in place. */
+  const jump = (x, height, dur, { onMid, onLand } = {}) => ({
+    start() {
+      this.x0 = dog.x;
+      this.x1 = x ?? dog.x;
+      this.y0 = dog.y;
+      this.mid = false;
+    },
+    update(t) {
+      const k = Math.min(1, t / dur);
+      dog.x = lerp(this.x0, this.x1, k);
+      dog.y = lerp(this.y0, 0, k) - height * 4 * k * (1 - k);
+      dog.air = Math.sin(Math.PI * k);
+      if (!this.mid && k >= 0.5) {
+        this.mid = true;
+        onMid?.();
+      }
+      if (k >= 1) {
+        dog.air = 0;
+        dog.y = 0;
+        dog.squash = 1;
+        clack(0.45);
+        for (let i = 0; i < 5; i++) puff(dog.x + rand(-60, 60), -6, rand(-120, 120), rand(-80, -20));
+        onLand?.();
+      }
+      return k >= 1;
+    },
+  });
+  const skid = () => ({
+    start() {
+      callbacks.current.onScratch?.();
+      dog.squash = 0.7;
+      for (let i = 0; i < 7; i++) puff(dog.x + dog.facing * rand(-10, 70), -6, dog.facing * rand(40, 180), rand(-100, -30));
+    },
+    dur: 0.25,
+  });
+  const headShake = (dur) => ({
+    update(t) {
+      const k = Math.min(1, t / dur);
+      dog.tilt = 0.24 * Math.sin(t * 30) * (1 - k);
+      dog.ear = 0.1 + 0.5 * Math.sin(t * 30 + 1);
+      return k >= 1;
+    },
+    end() {
+      dog.tilt = 0;
+    },
+  });
+  /** Walk slowly with the nose down, sniffing. */
+  const sniffTo = (x, speed) => ({
+    start() {
+      this.x0 = dog.x;
+      this.dur = Math.max(0.3, Math.abs(x - dog.x) / speed);
+      this.next = 0.1;
+    },
+    update(t, dt) {
+      const k = Math.min(1, t / this.dur);
+      const prev = dog.x;
+      dog.x = lerp(this.x0, x, k);
+      dog.phase += (Math.abs(dog.x - prev) / GAIT_LENGTH) * Math.PI * 2;
+      dog.gait = 0.7;
+      this.next -= dt;
+      if (this.next <= 0) {
+        this.next = rand(0.4, 0.65);
+        callbacks.current.onSniff?.();
+        const [nx, ny] = toWorld(dog.nose);
+        for (let i = 0; i < 2; i++) puff(nx, ny, dog.facing * rand(-30, 40), rand(-60, -20), rand(2.5, 4));
+      }
+      if (k >= 1) dog.gait = 0;
+      return k >= 1;
+    },
+  });
 
+  // ---- bone actions ------------------------------------------------------------
   /** All bones hop into a fresh heap. This is the "mixing". */
-  const shuffle = (winner) => {
-    const order = layoutHeap(bones, winner);
+  const shuffle = () => {
+    const order = layoutHeap(bones);
     shuffleLeft = order.length;
-    order.forEach((b, i) => {
-      if (b.mode === "held") b.glow.setAttribute("opacity", 0);
+    order.forEach((b) => {
+      b.glow.setAttribute("opacity", 0);
       b.underline?.setAttribute("opacity", 0);
+      setMystery(b, false);
+      b.sx = 1;
       pileLayer.appendChild(b.g);
       b.mode = "tween";
       b.tween = {
         from: { x: b.x, y: b.y, r: b.r },
-        t: -i * (0.8 / order.length),
-        dur: 0.5,
-        arc: rand(70, 150),
-        spin: Math.random() < 0.4 ? Math.PI * 2 * Math.sign(rand(-1, 1)) : 0,
+        t: -rand(0, 1.3),
+        dur: rand(0.5, 0.7),
+        arc: rand(90, 210),
+        spin: Math.random() < 0.45 ? Math.PI * 2 * (Math.random() < 0.5 ? -1 : 1) : 0,
       };
     });
+    held = null;
   };
 
-  /** Bones piled on top of the winner get flung out behind the dog. */
-  const planLaunches = () => {
-    const w = winnerBone.slot;
-    digLaunches = bones
-      .filter((b) => b !== winnerBone && b.slot.order > w.order && Math.abs(b.slot.x - w.x) < 120)
-      .sort((a, b) => a.slot.y - b.slot.y)
-      .slice(0, 6);
-    nextLaunch = 0.15;
-  };
+  /** Top-most bones near a spot. */
+  const topBonesNear = (x, range, count) =>
+    bones
+      .filter((b) => b.mode === "rest" && b !== held && Math.abs(b.x - x) < range)
+      .sort((a, b) => a.y - b.y)
+      .slice(0, count);
 
-  const launch = (b) => {
+  const launch = (b, dir, speed = rand(640, 880)) => {
     frontLayer.appendChild(b.g);
-    Object.assign(b, { mode: "fly", vx: rand(640, 880), vy: rand(-680, -540), vr: rand(-14, 14) });
-    for (let i = 0; i < 3; i++) puff(b.x + rand(-20, 20), b.y + 10, rand(40, 160), rand(-120, -40));
+    Object.assign(b, { mode: "fly", vx: dir * speed, vy: rand(-680, -540), vr: rand(-14, 14) });
+    for (let i = 0; i < 3; i++) puff(b.x + rand(-20, 20), b.y + 10, dir * rand(40, 160), rand(-120, -40));
   };
 
-  const grab = () => ({
+  /** Scratch at the pile; bones on top get flung out behind the dog. */
+  const dig = (dur, count, { rustleAt = null } = {}) => ({
     start() {
-      this.attached = false;
+      dog.scratch = rustleAt == null ? 1 : 0.5;
+      const [mx] = toWorld(dog.mouth);
+      digDir = -dog.facing;
+      digLaunches = count ? topBonesNear(mx, 140, count) : [];
+      nextLaunch = rand(0.15, 0.3);
+      rustle = rustleAt == null ? null : { x: rustleAt, next: 0 };
     },
     update(t) {
-      // Plunge in, clamp onto the bone, pull it out with a toss of the head.
+      return t >= dur;
+    },
+    end() {
+      dog.scratch = 0;
+      if (rustle) for (const b of bones) if (b.mode === "rest") placeBone(b);
+      rustle = null;
+      digLaunches = [];
+    },
+  });
+
+  /** A fresh bone with the winner's name hidden behind a "?". */
+  const mysteryBone = () => {
+    const b = makeBone(winnerInfo._id, labelMap.get(winnerInfo._id) ?? winnerInfo.firstName);
+    setMystery(b, true);
+    b.fromPile = true;
+    bones.push(b);
+    return b;
+  };
+  /** A named bone that isn't the winner's, near the dog's mouth (for the fake-out). */
+  const decoyBone = () => {
+    const [mx] = toWorld(dog.mouth);
+    const pick = bones
+      .filter((b) => b.mode === "rest" && b.text && b.id !== winnerInfo._id)
+      .sort((a, b) => Math.abs(a.x - mx) + (a.y + 300) * 0.4 - (Math.abs(b.x - mx) + (b.y + 300) * 0.4))[0];
+    if (pick) return pick;
+    const blank = makeBone(`blank-decoy-${Date.now()}`, null);
+    blank.fromPile = true;
+    bones.push(blank);
+    return blank;
+  };
+
+  /** Plunge in, clamp onto a bone, pull it out with a toss of the head. */
+  const grab = (pick) => ({
+    start() {
+      this.bone = null;
+    },
+    update(t) {
       if (t < 0.32) {
         const k = easeInOut(t / 0.32);
         dog.extraNeck = 0.25 * k;
         dog.extraHead = 0.35 * k;
       } else {
-        if (!this.attached) {
-          this.attached = true;
-          frontLayer.appendChild(winnerBone.g);
-          winnerBone.mode = "held";
-          winnerBone.tween = { from: { x: winnerBone.x, y: winnerBone.y, r: winnerBone.r }, t: 0 };
+        if (!this.bone) {
+          const b = pick();
+          this.bone = b;
+          held = b;
+          const [mx, my] = toWorld(dog.mouth);
+          frontLayer.appendChild(b.g);
+          b.tween = { from: b.fromPile ? { x: mx, y: my + 36, r: 0 } : { x: b.x, y: b.y, r: b.r }, t: 0 };
+          b.fromPile = false;
+          b.mode = "held";
           clack(0.7);
-          for (let i = 0; i < 5; i++) puff(winnerBone.x + rand(-30, 30), winnerBone.y, rand(-80, 80), rand(-160, -60));
+          for (let i = 0; i < 6; i++) puff(mx + rand(-30, 30), my + 10, rand(-90, 90), rand(-170, -60));
         }
         const k = Math.min(1, (t - 0.32) / 0.45);
         dog.extraNeck = lerp(0.25, -0.1, easeInOut(k));
         dog.extraHead = lerp(0.35, -0.3, easeInOut(k));
-        dog.dig = 1 - easeInOut(k);
+        dog.dig = Math.min(dog.dig, 1 - easeInOut(k));
       }
-      return t >= 0.8;
+      return t >= 0.85;
     },
     end() {
       dog.extraNeck = 0;
@@ -735,52 +927,213 @@ function createEngine(host, callbacks) {
     },
   });
 
+  const toss = () =>
+    call(() => {
+      const b = held;
+      held = null;
+      Object.assign(b, { mode: "fly", vx: -dog.facing * rand(360, 520), vy: -rand(700, 820), vr: rand(-18, 18) });
+      clack(0.4);
+    });
+
+  /** Flip the held bone over to reveal the name. The big moment. */
+  const flip = () => ({
+    start() {
+      this.swapped = false;
+    },
+    update(t) {
+      const k = Math.min(1, t / 0.5);
+      held.sx = Math.max(0.03, Math.abs(Math.cos(Math.PI * k)));
+      if (!this.swapped && k >= 0.5) {
+        this.swapped = true;
+        setMystery(held, false);
+      }
+      return k >= 1;
+    },
+    end() {
+      held.sx = 1;
+      // The revealed bone replaces the winner's copy in the pile.
+      const original = bones.find((b) => b.id === held.id && b !== held);
+      if (original) {
+        original.g.remove();
+        bones.splice(bones.indexOf(original), 1);
+      }
+      mode = "present";
+      presentT = 0;
+      dog.wagSpeed = 13;
+      dog.wagAmp = 0.35;
+      callbacks.current.onLanded?.();
+    },
+  });
+
+  // ---- routines ------------------------------------------------------------------
+  const digPointRight = () => PILE_X + rand(20, PILE_HALF * 0.62);
+  const digPointLeft = () => PILE_X - rand(40, PILE_HALF * 0.62);
+  /** Where to stand so the mouth lands on `point` while facing `facing`. */
+  const standFor = (point, facing) => point - facing * digReach;
+  const approachAndDig = (point, facing = -1) => [
+    turnTo(facing),
+    runTo(standFor(point, facing), rand(380, 460)),
+    blend({ dig: 1 }, 0.3),
+  ];
+
+  const intro = () => [
+    call(() => {
+      pop("!");
+      dog.wagSpeed = 18;
+      dog.wagAmp = 0.45;
+      dog.extraHead = 0;
+    }),
+    blend({ sit: 0 }, 0.3),
+    jump(null, 26, 0.34),
+    call(shuffle),
+    // Play bow while the bones settle.
+    blend({ dig: 0.55, extraNeck: -0.55, extraHead: -0.65, wiggle: 1 }, 0.3),
+    wait(rand(0.9, 1.3)),
+    blend({ dig: 0, extraNeck: 0, extraHead: 0, wiggle: 0 }, 0.25),
+    waitFor(() => shuffleLeft <= 0),
+    wait(0.2),
+    call(() => callbacks.current.onSuspense?.(true)),
+  ];
+
+  const search = (variant) => {
+    switch (variant) {
+      case "around": {
+        // Runs past the pile and digs from the far side; bones fly off left.
+        const point = digPointLeft();
+        return [
+          turnTo(-1),
+          runTo(standFor(point, 1), rand(440, 500)),
+          wait(0.15),
+          turnTo(1),
+          blend({ dig: 1 }, 0.3),
+          dig(rand(2.4, 3.1), randInt(4, 6)),
+          grab(mysteryBone),
+        ];
+      }
+      case "fakeout": {
+        // Pulls out the wrong bone, looks at it, shakes its head, tosses it.
+        const first = digPointRight();
+        let second = digPointRight();
+        if (Math.abs(second - first) < 60) second = first > PILE_X + 90 ? first - 90 : first + 90;
+        return [
+          ...approachAndDig(first),
+          dig(rand(1.5, 1.9), 3),
+          grab(decoyBone),
+          blend({ dig: 0, extraHead: -0.35 }, 0.3),
+          wait(0.45),
+          call(() => pop("?")),
+          wait(0.35),
+          headShake(0.8),
+          toss(),
+          wait(0.3),
+          blend({ extraHead: 0 }, 0.15),
+          moveTo(standFor(second, -1), 200),
+          blend({ dig: 1 }, 0.3),
+          dig(rand(1.9, 2.4), 3),
+          grab(mysteryBone),
+        ];
+      }
+      case "sniffer": {
+        // Nose down along the pile, freezes in a pointer pose, then pounces.
+        const start = PILE_X + PILE_HALF + 100;
+        const stop = start - rand(110, 170);
+        return [
+          turnTo(-1),
+          runTo(start, 400),
+          blend({ sniff: 1 }, 0.3),
+          sniffTo(stop, 80),
+          wait(0.25),
+          sniffTo(stop - 22, 45),
+          blend({ sniff: 0, pawUp: 1, tailStiff: 1, extraNeck: 0.1, extraHead: -0.08 }, 0.25),
+          call(() => pop("!")),
+          wait(1.1),
+          blend({ pawUp: 0, tailStiff: 0, extraNeck: 0, extraHead: 0 }, 0.12),
+          jump(stop - 90, 80, 0.45),
+          blend({ dig: 1 }, 0.2),
+          dig(rand(1.1, 1.5), 3),
+          grab(mysteryBone),
+        ];
+      }
+      case "cannonball": {
+        // Leaps into the middle of the pile, rummages out of sight, bursts out.
+        const impact = PILE_X + rand(-50, 50);
+        return [
+          turnTo(-1),
+          runTo(PILE_X + PILE_HALF + 170, 450),
+          blend({ dig: 0.35, wiggle: 1 }, 0.25),
+          wait(0.45),
+          blend({ dig: 0, wiggle: 0 }, 0.1),
+          jump(impact + 40, 190, 0.85, {
+            onLand: () => {
+              setDogBehindPile(true);
+              cam.shake = 1;
+              clack(1);
+              // Throw clear of the spotlight to the right, or off stage left.
+              for (const b of topBonesNear(impact, 220, 10)) {
+                const dir = Math.sign(b.x - impact) || 1;
+                launch(b, dir, dir > 0 ? rand(760, 980) : rand(320, 620));
+              }
+              for (let i = 0; i < 14; i++) puff(impact + rand(-120, 120), -rand(20, 120), rand(-220, 220), rand(-260, -60), rand(6, 11));
+            },
+          }),
+          blend({ dig: 1 }, 0.2),
+          dig(rand(1.8, 2.4), 0, { rustleAt: impact }),
+          grab(mysteryBone),
+          turnTo(1),
+          jump(PILE_X + PILE_HALF + 90, 160, 0.8, { onMid: () => setDogBehindPile(false) }),
+        ];
+      }
+      default: {
+        // "dig" and "zoomies" both start with a plain dig.
+        return [...approachAndDig(digPointRight()), dig(rand(2.4, 3.2), randInt(4, 7)), grab(mysteryBone)];
+      }
+    }
+  };
+
+  const outro = (variant) => {
+    const reveal = [
+      blend({ sit: 1, extraHead: 0 }, 0.4),
+      call(() => (camMode = "present")),
+      wait(1.0),
+      flip(),
+    ];
+    if (variant === "zoomies") {
+      // Victory lap with the bone before sitting down.
+      return [
+        turnTo(1),
+        runTo(SPOT_X + 290, 650),
+        skid(),
+        turnTo(-1),
+        runTo(SPOT_X - 190, 650),
+        skid(),
+        turnTo(1),
+        runTo(SPOT_X, 320),
+        ...reveal,
+      ];
+    }
+    return [turnTo(1), runTo(SPOT_X, 380), ...reveal];
+  };
+
+  const pickVariant = () => {
+    if (forcedVariant) return forcedVariant;
+    const options = VARIANTS.filter((v) => v !== lastVariant);
+    return options[Math.floor(Math.random() * options.length)];
+  };
+
   const draw = (winner) => {
     if (pending) {
       rebuildBones(pending);
       pending = null;
     }
-    winnerBone = bones.find((b) => b.id === winner._id);
-    if (!winnerBone) {
-      winnerBone = makeBone(winner._id, winner.firstName);
-      bones.push(winnerBone);
-    }
+    winnerInfo = winner;
+    const variant = pickVariant();
+    lastVariant = variant;
     mode = "busy";
     camMode = "home";
     presentT = 0;
     dog.tilt = 0;
-    const digX = WINNER_X + digReach;
-    queue = [
-      call(() => {
-        bangT = 0;
-        dog.wagSpeed = 18;
-        dog.wagAmp = 0.45;
-        dog.extraHead = 0;
-      }),
-      blend({ sit: 0, dig: 0 }, 0.3),
-      call(() => shuffle(winnerBone)),
-      turnTo(-1),
-      runTo(digX),
-      waitFor(() => shuffleLeft <= 0),
-      blend({ dig: 1 }, 0.3),
-      call(() => {
-        planLaunches();
-        dog.scratch = 1;
-      }),
-      wait(2.1),
-      call(() => (dog.scratch = 0)),
-      grab(),
-      turnTo(1),
-      runTo(SPOT_X),
-      blend({ sit: 1 }, 0.35),
-      call(() => {
-        mode = "present";
-        camMode = "present";
-        dog.wagSpeed = 13;
-        dog.wagAmp = 0.35;
-        callbacks.current.onLanded?.();
-      }),
-    ];
+    setDogBehindPile(false);
+    queue = [...intro(), ...search(variant), ...outro(variant)];
     step = null;
   };
 
@@ -789,7 +1142,25 @@ function createEngine(host, callbacks) {
     step = null;
     mode = "idle";
     camMode = "home";
-    Object.assign(dog, { x: SPOT_X, facing: 1, sit: 1, dig: 0, gait: 0, scratch: 0, extraNeck: 0, extraHead: 0, tilt: 0 });
+    held = null;
+    setDogBehindPile(false);
+    Object.assign(dog, {
+      x: SPOT_X,
+      y: 0,
+      facing: 1,
+      sit: 1,
+      dig: 0,
+      gait: 0,
+      scratch: 0,
+      extraNeck: 0,
+      extraHead: 0,
+      tilt: 0,
+      sniff: 0,
+      pawUp: 0,
+      tailStiff: 0,
+      wiggle: 0,
+      air: 0,
+    });
     rebuildBones(pending ?? latest);
     pending = null;
   };
@@ -802,12 +1173,9 @@ function createEngine(host, callbacks) {
     else pending = list;
   };
 
-  // How far ahead of the dog its mouth reaches while digging: park the dog
-  // so it lands right over the winner's bone.
-  dog.sit = 0;
-  dog.dig = 1;
-  dog.extraNeck = 0.12;
-  dog.extraHead = 0.18;
+  // How far ahead of the dog its mouth reaches while digging, so the dog can
+  // park with its mouth over a chosen spot.
+  Object.assign(dog, { sit: 0, dig: 1, extraNeck: 0.12, extraHead: 0.18 });
   solveDog(0);
   const digReach = dog.mouth[0];
   Object.assign(dog, { sit: 1, dig: 0, extraNeck: 0, extraHead: 0 });
@@ -859,9 +1227,9 @@ function createEngine(host, callbacks) {
         const [mx, my] = toWorld(dog.mouth);
         const wobble = 0.06 * Math.sin(dog.phase * 2) * dog.gait + 0.03 * Math.sin(clock * 3) * (mode === "present" ? 1 : 0);
         const tw = b.tween;
-        if (tw && tw.t < 0.14) {
+        if (tw && tw.t < 0.16) {
           tw.t += dt;
-          const k = easeInOut(Math.min(1, tw.t / 0.14));
+          const k = easeInOut(Math.min(1, tw.t / 0.16));
           b.x = lerp(tw.from.x, mx, k);
           b.y = lerp(tw.from.y, my, k);
           b.r = lerp(tw.from.r, wobble, k);
@@ -871,6 +1239,8 @@ function createEngine(host, callbacks) {
           b.r = wobble;
         }
         placeBone(b);
+      } else if (rustle && Math.abs(b.x - rustle.x) < 180) {
+        placeBone(b, rand(-3, 3), rand(-3, 3));
       }
     }
   };
@@ -898,9 +1268,9 @@ function createEngine(host, callbacks) {
     if (bangT >= 0) {
       bangT += dt;
       const [hx, hy] = toWorld(dog.headTop);
-      const pop = bangT < 0.3 ? easeOutBack(bangT / 0.3) : 1;
+      const p = bangT < 0.3 ? easeOutBack(bangT / 0.3) : 1;
       const fade = bangT < 0.8 ? 1 : Math.max(0, 1 - (bangT - 0.8) / 0.3);
-      bang.setAttribute("transform", tf(hx, hy - 10 * pop, 0.12, pop, pop));
+      bang.setAttribute("transform", tf(hx, hy - 10 * p, 0.12, p, p));
       bang.setAttribute("opacity", fade.toFixed(2));
       if (bangT > 1.1) bangT = -1;
     }
@@ -926,7 +1296,7 @@ function createEngine(host, callbacks) {
       budget = 0;
     }
 
-    // Digging: paws scratch, dust flies, covering bones get flung out.
+    // Digging: paws scratch, dust flies, bones on top get flung out.
     if (dog.scratch > 0) {
       const before = Math.floor(dog.scratchPhase / Math.PI);
       dog.scratchPhase += dt * 15;
@@ -937,42 +1307,52 @@ function createEngine(host, callbacks) {
       }
       nextLaunch -= dt;
       if (nextLaunch <= 0 && digLaunches.length) {
-        launch(digLaunches.shift());
-        nextLaunch = 0.3;
+        launch(digLaunches.shift(), digDir);
+        nextLaunch = rand(0.25, 0.45);
+      }
+    }
+    if (rustle) {
+      rustle.next -= dt;
+      if (rustle.next <= 0) {
+        rustle.next = rand(0.12, 0.3);
+        clack(0.25);
+        puff(rustle.x + rand(-140, 140), -rand(40, 150), rand(-80, 80), rand(-140, -40), rand(4, 8));
       }
     }
 
-    // Life: blinks, ears, head tilt while showing off the bone.
+    // Life: blinks, ears, squash, head tilt while showing off the bone.
     nextBlink -= dt;
     if (nextBlink <= 0) {
       dog.blink = Math.min(1, dog.blink + dt * 14);
       if (dog.blink >= 1) nextBlink = rand(2.5, 5);
     } else dog.blink = Math.max(0, dog.blink - dt * 10);
+    dog.squash = Math.max(0, dog.squash - dt * 5);
     const earTarget =
-      dog.dig > 0.5 ? 0.55 : 0.12 + 0.35 * Math.sin(dog.phase * 2) * dog.gait + 0.05 * Math.sin(clock * 1.7);
+      dog.dig > 0.5 || dog.sniff > 0.5
+        ? 0.55
+        : 0.12 + 0.35 * Math.sin(dog.phase * 2) * dog.gait + 0.05 * Math.sin(clock * 1.7) - 0.3 * dog.tailStiff;
     dog.ear = lerp(dog.ear, earTarget, 1 - Math.exp(-dt * 10));
     if (mode === "idle") {
       dog.wagSpeed = lerp(dog.wagSpeed, 3, dt);
       dog.wagAmp = lerp(dog.wagAmp, 0.15, dt);
     }
-    if (mode === "present") {
+    if (mode === "present" && held) {
       presentT += dt;
       dog.tilt = 0.14 * easeInOut(Math.min(1, presentT / 0.6)) + 0.03 * Math.sin(clock * 1.3);
-      const b = winnerBone;
-      b.glow.setAttribute("opacity", (0.45 * Math.min(1, presentT / 0.5) + 0.1 * Math.sin(clock * 3)).toFixed(2));
-      if (b.underline) {
+      held.glow.setAttribute("opacity", (0.45 * Math.min(1, presentT / 0.5) + 0.1 * Math.sin(clock * 3)).toFixed(2));
+      if (held.underline) {
         const w = 42 * easeInOut(clamp((presentT - 0.3) / 0.5, 0, 1));
-        b.underline.setAttribute("opacity", w > 0.5 ? 1 : 0);
-        b.underline.setAttribute("x1", (-w).toFixed(1));
-        b.underline.setAttribute("x2", w.toFixed(1));
+        held.underline.setAttribute("opacity", w > 0.5 ? 1 : 0);
+        held.underline.setAttribute("x1", (-w).toFixed(1));
+        held.underline.setAttribute("x2", w.toFixed(1));
       }
-      if (presentT < 2.2 && Math.random() < dt * 9) sparkle(b.x + rand(-80, 80), b.y + rand(-50, 30));
+      if (presentT < 2.2 && Math.random() < dt * 9) sparkle(held.x + rand(-80, 80), held.y + rand(-50, 30));
     }
 
     updateBones(dt);
     solveDog(clock);
     updateFx(dt);
-    camFocus = mode === "busy" ? (dog.x + WINNER_X) / 2 : dog.x - 90;
+    themeFx.update(dt, clock);
     updateCamera(dt);
   };
 
@@ -1004,4 +1384,105 @@ function createEngine(host, callbacks) {
   };
 
   return { draw, reset, setParticipants, dispose };
+}
+
+// ---------------------------------------------------------------------------
+// Seasonal skins
+// ---------------------------------------------------------------------------
+
+/**
+ * Adds a theme's props (hat, pumpkins, bats, snow...) and returns its
+ * per-frame update. Themes are picked by month; see `pickTheme`.
+ */
+function buildTheme(theme, { back, propsLayer, fxLayer, hatSlot }) {
+  if (theme === "halloween") {
+    // Witch hat with a mint band.
+    const hat = el("g", { transform: "translate(-4 -24) rotate(-14)" }, hatSlot);
+    el("ellipse", { cx: 0, cy: 0, rx: 42, ry: 8, fill: "#1d1330" }, hat);
+    el("path", {
+      d: "M -24 -2 L 20 -2 C 12 -30 6 -56 -2 -76 C -6 -86 -18 -92 -30 -84 C -20 -80 -14 -72 -12 -62 C -16 -40 -20 -20 -24 -2 Z",
+      fill: "#1d1330",
+    }, hat);
+    el("path", { d: "M -22 -9 L 18 -9 L 15 -19 L -20 -19 Z", fill: MINT }, hat);
+
+    // Jack-o'-lanterns either side of the stage.
+    const faces = [];
+    const pumpkin = (x, s) => {
+      const g = el("g", { transform: `translate(${x} 0) scale(${s})` }, propsLayer);
+      el("ellipse", { cx: 0, cy: 3, rx: 46, ry: 8, fill: "url(#dfShadow)" }, g);
+      el("ellipse", { cx: 0, cy: -30, rx: 44, ry: 31, fill: "#d9701a" }, g);
+      el("ellipse", { cx: -17, cy: -30, rx: 21, ry: 30, fill: "#ef8a2e" }, g);
+      el("ellipse", { cx: 17, cy: -30, rx: 21, ry: 30, fill: "#ef8a2e" }, g);
+      el("ellipse", { cx: 0, cy: -30, rx: 15, ry: 31, fill: "#f79a3e" }, g);
+      el("path", { d: "M 0 -60 C 2 -70 8 -74 13 -72", fill: "none", stroke: "#3f7d5a", "stroke-width": 7, "stroke-linecap": "round" }, g);
+      const face = el("g", { fill: "#ffd45e" }, g);
+      el("path", { d: "M -24 -36 L -13 -48 L -7 -34 Z" }, face);
+      el("path", { d: "M 24 -36 L 13 -48 L 7 -34 Z" }, face);
+      el("path", { d: "M -25 -22 Q 0 -4 25 -22 L 17 -19 L 12 -13 L 6 -19 L 0 -12 L -6 -19 L -12 -13 L -17 -19 Z" }, face);
+      faces.push(face);
+    };
+    pumpkin(PILE_X - PILE_HALF - 35, 1.05);
+    pumpkin(SPOT_X + 245, 0.85);
+
+    // Bats flapping across the moon.
+    const bats = [0, 1, 2].map((i) => {
+      const g = el("g", {}, back);
+      const wings = el("g", {}, g);
+      const wing = "M -4 -2 C -14 -14 -30 -12 -40 -4 C -33 -2 -31 4 -27 7 C -23 1 -17 3 -13 7 C -10 1 -6 1 -3 3 Z";
+      el("path", { d: wing, fill: "#0b0b0f" }, wings);
+      el("path", { d: wing, fill: "#0b0b0f", transform: "scale(-1 1)" }, wings);
+      el("ellipse", { cx: 0, cy: 0, rx: 6, ry: 9, fill: "#0b0b0f" }, g);
+      el("path", { d: "M -4 -7 L -3 -14 L 0 -8 L 3 -14 L 4 -7 Z", fill: "#0b0b0f" }, g);
+      return { g, wings, offset: i * 3.1, speed: 70 + i * 22, y: -250 + i * 38, scale: 0.7 + i * 0.18 };
+    });
+
+    return {
+      update(dt, clock) {
+        faces.forEach((f, i) => f.setAttribute("opacity", (0.78 + 0.22 * Math.sin(clock * 9 + i * 2) * Math.sin(clock * 3.7 + i)).toFixed(2)));
+        for (const b of bats) {
+          const span = 1300;
+          const x = ((clock * b.speed + b.offset * 400) % span) - 750;
+          const y = b.y + 22 * Math.sin(clock * 1.6 + b.offset);
+          b.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${b.scale})`);
+          b.wings.setAttribute("transform", `scale(1 ${Math.cos(clock * 16 + b.offset).toFixed(2)})`);
+        }
+      },
+    };
+  }
+
+  if (theme === "holiday") {
+    // Santa hat flopping back, with a pom-pom.
+    const hat = el("g", { transform: "translate(-2 -24) rotate(-8)" }, hatSlot);
+    el("path", {
+      d: "M 26 -4 C 22 -36 0 -60 -24 -62 C -40 -62 -50 -52 -56 -38 C -46 -44 -34 -44 -28 -38 C -24 -26 -26 -12 -28 -4 Z",
+      fill: "#d63a3a",
+    }, hat);
+    el("rect", { x: -32, y: -12, width: 62, height: 15, rx: 7.5, fill: "#f6f6f4" }, hat);
+    el("circle", { cx: -57, cy: -37, r: 10, fill: "#f6f6f4" }, hat);
+
+    // Snow: some flakes behind the stage, some in front for depth.
+    const flakes = Array.from({ length: 70 }, (_, i) => ({
+      node: el("circle", { r: rand(1.3, 3.4), fill: "#fff", opacity: rand(0.35, 0.85) }, i % 3 === 0 ? fxLayer : back),
+      x: rand(-850, 750),
+      y: rand(-420, 40),
+      vy: rand(22, 58),
+      sway: rand(0, 6.28),
+    }));
+    return {
+      update(dt, clock) {
+        for (const f of flakes) {
+          f.y += f.vy * dt;
+          f.x += Math.sin(clock * 0.8 + f.sway) * 14 * dt;
+          if (f.y > 40) {
+            f.y = -430;
+            f.x = rand(-850, 750);
+          }
+          f.node.setAttribute("cx", f.x.toFixed(1));
+          f.node.setAttribute("cy", f.y.toFixed(1));
+        }
+      },
+    };
+  }
+
+  return { update() {} };
 }

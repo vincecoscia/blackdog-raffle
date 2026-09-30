@@ -58,6 +58,18 @@ export const VolumeOffIcon = (p) => (
   </Svg>
 );
 
+export const ExpandIcon = (p) => (
+  <Svg {...p}>
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </Svg>
+);
+
+export const ShrinkIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+  </Svg>
+);
+
 export const SparklesIcon = (p) => (
   <Svg {...p}>
     <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />

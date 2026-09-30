@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { toast } from "react-toastify";
 import NameShuffle from "./NameShuffle";
 import WinnerReveal from "./WinnerReveal";
-import { SparklesIcon, Spinner, UsersIcon, VolumeIcon, VolumeOffIcon } from "./icons";
+import { ExpandIcon, ShrinkIcon, SparklesIcon, Spinner, UsersIcon, VolumeIcon, VolumeOffIcon } from "./icons";
 import { api } from "@/lib/client";
 import { celebrate, preloadConfetti } from "@/lib/confetti";
 import { plural } from "@/lib/format";
@@ -12,9 +12,11 @@ import {
   isSoundEnabledOnServer,
   playFanfare,
   playScratch,
+  playSniff,
   playThunk,
   playTick,
   setSoundEnabled,
+  startDrumroll,
   subscribeSound,
   unlockAudio,
 } from "@/lib/sound";
@@ -32,10 +34,15 @@ function detectRenderer() {
   return rendererChoice;
 }
 
+/** Keys typed into controls shouldn't trigger the big-screen shortcuts. */
+const isFromControl = (e) =>
+  e.target instanceof Element && Boolean(e.target.closest("button, a, input, textarea, select, [contenteditable]"));
+
 /**
  * The raffle: orchestrates the draw (server call, sound, confetti, reveal) and
  * hands the visual to the dog-fetches-a-bone scene, or to a simple name
- * shuffle for users who prefer reduced motion.
+ * shuffle for users who prefer reduced motion. "Big screen" mode turns the
+ * stage into a full-screen presentation for drawing live in a meeting.
  */
 export default function RaffleSlotMachine({ employees, onWinner }) {
   const participants = useMemo(
@@ -52,20 +59,26 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
   const [scene, setScene] = useState(null); // { draw, reset } from the scene engine
   const [shuffle, setShuffle] = useState(null); // { key, winner } for the DOM fallback
   const [reveal, setReveal] = useState(null);
+  const [big, setBig] = useState(false);
 
   const windowEl = useRef(null);
   const flashEl = useRef(null);
   const result = useRef(null);
+  const stopRoll = useRef(null);
   const onWinnerRef = useRef(onWinner);
+  const shortcut = useRef(null);
 
   useEffect(() => {
     onWinnerRef.current = onWinner;
   }, [onWinner]);
 
+  // Never leave a drumroll running if the component goes away mid-draw.
+  useEffect(() => () => stopRoll.current?.(false), []);
+
   const players = participants.length;
   const busy = phase === "drawing" || phase === "spinning";
 
-  /** Screen flash + a little kick to the frame as the dog sits with the bone. */
+  /** Screen flash + a little kick to the frame as the bone is revealed. */
   const landingFx = useCallback(() => {
     if (renderer !== "scene") return;
     flashEl.current?.animate([{ opacity: 0.5 }, { opacity: 0 }], { duration: 650, easing: "ease-out" });
@@ -80,9 +93,20 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
     );
   }, [renderer]);
 
-  // Called by whichever visual is running, the moment the winner is presented.
+  // The scene calls this when the search starts: drumroll until the reveal.
+  const suspense = useCallback((on) => {
+    stopRoll.current?.(false);
+    stopRoll.current = on ? startDrumroll() : null;
+  }, []);
+
+  // Called by whichever visual is running, the moment the winner is revealed.
   const landed = useCallback(() => {
-    playThunk();
+    if (stopRoll.current) {
+      stopRoll.current(true); // finish the drumroll on a cymbal crash
+      stopRoll.current = null;
+    } else {
+      playThunk();
+    }
     landingFx();
     setTimeout(() => {
       celebrate();
@@ -119,12 +143,12 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
     }
   }, [busy, scene, players, renderer]);
 
-  // After the reveal closes the winner stays in the cup until the next draw.
+  // After the reveal closes, the dog keeps showing off the bone until the next draw.
   const closeReveal = () => setReveal(null);
-  const drawAgain = () => {
+  const drawAgain = useCallback(() => {
     setReveal(null);
     setTimeout(draw, 60);
-  };
+  }, [draw]);
 
   const toggleSound = () => {
     const next = !soundOn;
@@ -134,6 +158,50 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
       playTick(0.2);
     }
   };
+
+  // ---- big screen ------------------------------------------------------------
+  const enterBig = () => {
+    setBig(true);
+    document.documentElement.requestFullscreen?.().catch(() => {
+      /* not allowed (e.g. iOS): the overlay still fills the window */
+    });
+  };
+  const exitBig = useCallback(() => {
+    setBig(false);
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    shortcut.current = reveal ? drawAgain : draw;
+  }, [reveal, draw, drawAgain]);
+
+  useEffect(() => {
+    if (!big) return;
+    const onFullscreen = () => {
+      if (!document.fullscreenElement) setBig(false);
+    };
+    const onKey = (e) => {
+      if (e.defaultPrevented) return;
+      // Esc always leaves big screen (the reveal dialog handles its own Esc).
+      if (e.key === "Escape") {
+        if (!reveal) exitBig();
+        return;
+      }
+      if (isFromControl(e)) return;
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        shortcut.current?.();
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreen);
+    window.addEventListener("keydown", onKey);
+    document.documentElement.classList.add("big-screen");
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreen);
+      window.removeEventListener("keydown", onKey);
+      document.documentElement.classList.remove("big-screen");
+    };
+  }, [big, reveal, exitBig]);
 
   const buttonLabel = {
     idle: "Draw a winner",
@@ -146,8 +214,11 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
 
   return (
     <>
-      <section aria-label="Raffle" className="accent-frame animate-fade-up p-1">
-        <div className="rounded-[1.4rem] bg-ink-900/90 p-4 sm:p-6">
+      <section
+        aria-label="Raffle"
+        className={big ? "fixed inset-0 z-45 flex flex-col bg-ink-950 p-3 sm:p-6" : "accent-frame animate-fade-up p-1"}
+      >
+        <div className={big ? "flex min-h-0 flex-1 flex-col" : "rounded-[1.4rem] bg-ink-900/90 p-4 sm:p-6"}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="eyebrow pt-2.5">Blackdog weekly draw</p>
@@ -159,22 +230,38 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
                 {players > 0 && <span className="chip text-ink-400">1 in {players} chance each</span>}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={toggleSound}
-              aria-pressed={soundOn}
-              aria-label={soundOn ? "Mute sound effects" : "Unmute sound effects"}
-              title={soundOn ? "Sound on" : "Sound off"}
-              className={`btn btn-icon ${soundOn ? "btn-secondary text-accent-300" : "btn-ghost text-ink-500"}`}
-            >
-              {soundOn ? <VolumeIcon size={18} /> : <VolumeOffIcon size={18} />}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={toggleSound}
+                aria-pressed={soundOn}
+                aria-label={soundOn ? "Mute sound effects" : "Unmute sound effects"}
+                title={soundOn ? "Sound on" : "Sound off"}
+                className={`btn btn-icon ${soundOn ? "btn-secondary text-accent-300" : "btn-ghost text-ink-500"}`}
+              >
+                {soundOn ? <VolumeIcon size={18} /> : <VolumeOffIcon size={18} />}
+              </button>
+              {renderer === "scene" && (
+                <button
+                  type="button"
+                  onClick={big ? exitBig : enterBig}
+                  aria-pressed={big}
+                  aria-label={big ? "Exit big screen" : "Big screen"}
+                  title={big ? "Exit big screen (Esc)" : "Big screen — for drawing live"}
+                  className="btn btn-icon btn-secondary"
+                >
+                  {big ? <ShrinkIcon size={18} /> : <ExpandIcon size={18} />}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* The stage */}
           <div
             ref={windowEl}
-            className="stage-window relative mt-5 h-120 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 sm:h-140"
+            className={`stage-window relative mt-5 overflow-hidden rounded-2xl bg-ink-950 ring-1 ring-white/6 ${
+              big ? "min-h-0 flex-1" : "h-120 sm:h-140"
+            }`}
           >
             {players === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
@@ -191,6 +278,8 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
                     onLanded={landed}
                     onClack={clack}
                     onScratch={playScratch}
+                    onSniff={playSniff}
+                    onSuspense={suspense}
                   />
                 )}
                 {showShuffle && (
@@ -211,12 +300,16 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             )}
           </div>
 
-          <div className="mt-5 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <div
+            className={`mt-5 flex flex-col items-stretch gap-3 ${
+              big ? "sm:flex-row sm:items-center sm:justify-center" : "sm:flex-row sm:items-center"
+            }`}
+          >
             <button
               type="button"
               onClick={draw}
               disabled={busy || players === 0}
-              className={`btn btn-primary h-13 flex-1 text-base sm:max-w-xs ${
+              className={`btn btn-primary flex-1 ${big ? "h-14 text-lg sm:max-w-sm" : "h-13 text-base sm:max-w-xs"} ${
                 phase === "idle" && players > 0 ? "animate-pulse-glow" : ""
               }`}
             >
@@ -226,7 +319,9 @@ export default function RaffleSlotMachine({ employees, onWinner }) {
             <p className="text-sm text-ink-400 sm:ml-2" aria-live="polite">
               {players === 0
                 ? "Nobody's in the draw yet — flip teammates in below."
-                : "One bone each. Everyone in the draw has the same shot."}
+                : big
+                  ? "Press Space to draw · Esc to exit"
+                  : "One bone each. Everyone in the draw has the same shot."}
             </p>
           </div>
         </div>

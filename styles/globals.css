@@ -293,6 +293,15 @@
   --toastify-toast-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
 
+/* Big-screen draw: the stage is a fixed overlay inside <main>, whose z-10
+   stacking context would otherwise leave it under the sticky header. */
+html.big-screen {
+  overflow: hidden;
+}
+html.big-screen main {
+  z-index: 50;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
