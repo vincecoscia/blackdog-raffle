@@ -61,7 +61,7 @@ CLIPS = [
     # Howl (2450 "Dog singing #1")
     ("howl", "bsb:2450", ("event", 0.12)),
     # Happy panting (1547 "Dogs Breathing")
-    ("pant", "bsb:1547", ("range", 2.35, 5.0)),
+    ("pant", "bsb:1547", ("range", 2.35, 5.5, 1.4)),
     # Bones: wooden clacks (Kenney)
     ("clack1", "kenney:impactWood_light_000", None),
     ("clack2", "kenney:impactWood_light_001", None),
