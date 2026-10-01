@@ -20,7 +20,8 @@ export default function Home({ session, employees: initialEmployees, winCounts: 
 
 function Dashboard({ employees: initialEmployees, winCounts: initialCounts, chatEnabled, initialKind }) {
   const router = useRouter();
-  const { employees, savingIds, setInDraw, setEntries, remove, setAllInDraw, setAllEntries } = useEmployees(initialEmployees);
+  const { employees, savingIds, setInDraw, setEntries, remove, setAllInDraw, setAllEntries, changeAllEntries } =
+    useEmployees(initialEmployees);
   const [winCounts, setWinCounts] = useState(initialCounts);
   const [kind, setKind] = useState(initialKind);
   const [drawing, setDrawing] = useState(false);
@@ -67,6 +68,7 @@ function Dashboard({ employees: initialEmployees, winCounts: initialCounts, chat
         onRemove={remove}
         onSetAll={setAllInDraw}
         onSetAllEntries={setAllEntries}
+        onChangeAllEntries={changeAllEntries}
       />
     </>
   );

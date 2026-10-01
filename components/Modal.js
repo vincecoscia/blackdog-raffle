@@ -3,7 +3,9 @@ import { Spinner } from "./icons";
 
 /**
  * Confirmation dialog. Accessible out of the box (focus trap, Escape, click
- * outside) via Headless UI; styled to match the rest of the app.
+ * outside) via Headless UI; styled to match the rest of the app. `children`
+ * (e.g. a control for how much to change) go under the description. Focus
+ * starts on Cancel, so nothing happens on a stray Enter.
  */
 export default function ConfirmDialog({
   open,
@@ -16,6 +18,7 @@ export default function ConfirmDialog({
   danger = false,
   busy = false,
   icon = null,
+  children = null,
 }) {
   return (
     <Dialog open={open} onClose={busy ? () => {} : onClose} className="relative z-50">
@@ -41,10 +44,11 @@ export default function ConfirmDialog({
             <div className="min-w-0 flex-1">
               <DialogTitle className="font-display text-lg font-bold text-ink-50">{title}</DialogTitle>
               {description && <p className="mt-1.5 text-sm leading-relaxed text-ink-300">{description}</p>}
+              {children}
             </div>
           </div>
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={busy} data-autofocus>
               {cancelLabel}
             </button>
             <button

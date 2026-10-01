@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_ENTRIES } from "@/lib/raffles";
 
-const clampEntries = (n) => Math.min(MAX_ENTRIES, Math.max(0, n));
-
 const Glyph = ({ d, size }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
     <path d={d} />
   </svg>
 );
 
+/** The stepper's − and + marks, for buttons that should match it. */
+export const MinusGlyph = ({ size = 15 }) => <Glyph d="M6 12h12" size={size} />;
+export const PlusGlyph = ({ size = 15 }) => <Glyph d="M12 6v12M6 12h12" size={size} />;
+
 /**
  * Monthly entries: − count +. The count can also be typed straight in, and
  * the arrow keys step it. Each change is reported at once; the caller decides
- * when to save.
+ * when to save. `min` raises the floor (e.g. 1 for "how many to add"), and
+ * `suffix` follows the unit ("entries each").
  */
-export default function EntryStepper({ value, onChange, label, size = "md" }) {
+export default function EntryStepper({ value, onChange, label, min = 0, suffix = "", inputLabel = null, size = "md" }) {
   const [draft, setDraft] = useState(null); // text while the count is being typed
   const input = useRef(null);
   const shown = useRef(value);
@@ -38,7 +41,7 @@ export default function EntryStepper({ value, onChange, label, size = "md" }) {
   }, [value, big]);
 
   const set = (n) => {
-    const next = clampEntries(n);
+    const next = Math.min(MAX_ENTRIES, Math.max(min, n));
     if (next !== value) onChange(next);
   };
 
@@ -73,7 +76,7 @@ export default function EntryStepper({ value, onChange, label, size = "md" }) {
           active ? "border-accent-400/40 bg-accent-400/10" : "border-white/10 bg-ink-800"
         }`}
       >
-        <button type="button" className={button} onClick={() => set(value - 1)} disabled={value <= 0} aria-label={`One fewer entry for ${label}`}>
+        <button type="button" className={button} onClick={() => set(value - 1)} disabled={value <= min} aria-label={`One fewer entry for ${label}`}>
           <Glyph d="M6 12h12" size={big ? 16 : 13} />
         </button>
         <input
@@ -81,9 +84,9 @@ export default function EntryStepper({ value, onChange, label, size = "md" }) {
           type="text"
           inputMode="numeric"
           role="spinbutton"
-          aria-label={`Monthly entries for ${label}`}
+          aria-label={inputLabel ?? `Monthly entries for ${label}`}
           aria-valuenow={value}
-          aria-valuemin={0}
+          aria-valuemin={min}
           aria-valuemax={MAX_ENTRIES}
           value={draft ?? String(value)}
           onChange={(e) => setDraft(e.target.value.replace(/\D/g, "").slice(0, String(MAX_ENTRIES).length))}
@@ -100,6 +103,7 @@ export default function EntryStepper({ value, onChange, label, size = "md" }) {
       </span>
       <span className={`font-semibold whitespace-nowrap transition-colors ${big ? "text-base" : "text-xs"} ${active ? "text-accent-300" : "text-ink-500"}`}>
         {value === 1 ? "entry" : "entries"}
+        {suffix && ` ${suffix}`}
       </span>
     </span>
   );

@@ -2,11 +2,12 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import EmployeeCard from "./EmployeeCard";
+import EntryStepper, { MinusGlyph, PlusGlyph } from "./EntryStepper";
 import ConfirmDialog from "./Modal";
 import RaffleSwitch from "./RaffleSwitch";
 import { CheckIcon, PlusIcon, SearchIcon, TicketIcon, TrashIcon, UsersIcon, XIcon } from "./icons";
 import { fullName, plural } from "@/lib/format";
-import { tally, ticketsFor } from "@/lib/raffles";
+import { MAX_ENTRIES, tally, ticketsFor } from "@/lib/raffles";
 
 const FILTER_LABELS = {
   weekly: { all: "Everyone", in: "In the draw", out: "Sitting out" },
@@ -31,6 +32,19 @@ function copyFor(kind, { people, tickets, outCount }) {
   };
 }
 
+/** The hat after `change` more entries for everyone (or fewer), with counts kept within 0..MAX_ENTRIES. */
+function afterChange(employees, change) {
+  let tickets = 0;
+  let emptied = 0;
+  for (const e of employees) {
+    const before = e.entries ?? 0;
+    const after = Math.min(MAX_ENTRIES, Math.max(0, before + change));
+    tickets += after;
+    if (before > 0 && after === 0) emptied += 1;
+  }
+  return { tickets, emptied };
+}
+
 /** Roster: search, bulk controls and the grid of teammate cards, for whichever raffle is showing. */
 export default function Employees({
   employees,
@@ -44,10 +58,12 @@ export default function Employees({
   onRemove,
   onSetAll,
   onSetAllEntries,
+  onChangeAllEntries,
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [bulk, setBulk] = useState(null); // "in" | "out" | "clear"
+  const [bulk, setBulk] = useState(null); // "in" | "out" | "add" | "take" | "clear"
+  const [amount, setAmount] = useState(1); // how many entries "add" / "take" changes everyone by
   const [lastBulk, setLastBulk] = useState("in"); // keeps the dialog's words while it closes
   const [deleting, setDeleting] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -88,6 +104,24 @@ export default function Employees({
       run: () => onSetAll(false),
       done: "Everyone is sitting out — flip people in as timesheets land.",
     },
+    add: {
+      icon: <PlusGlyph size={20} />,
+      title: "Add entries for everyone",
+      description: "Every teammate gets the same number of extra monthly entries.",
+      confirmLabel: `Add ${plural(amount, "entry", "entries")} each`,
+      run: () => onChangeAllEntries(amount),
+      done: `Everyone got ${plural(amount, "more entry", "more entries")}.`,
+      body: <ChangePreview employees={employees} tickets={tickets} change={amount} amount={amount} onAmount={setAmount} />,
+    },
+    take: {
+      icon: <MinusGlyph size={20} />,
+      title: "Take entries from everyone",
+      description: "Every teammate loses the same number of monthly entries — nobody goes below 0.",
+      confirmLabel: `Take ${plural(amount, "entry", "entries")} each`,
+      run: () => onChangeAllEntries(-amount),
+      done: `Took ${plural(amount, "entry", "entries")} from everyone.`,
+      body: <ChangePreview employees={employees} tickets={tickets} change={-amount} amount={amount} onAmount={setAmount} />,
+    },
     clear: {
       icon: <TicketIcon size={20} />,
       title: "Clear everyone's monthly entries?",
@@ -102,6 +136,7 @@ export default function Employees({
   const openBulk = (key) => {
     setLastBulk(key);
     setBulk(key);
+    setAmount(1);
   };
 
   const confirmBulk = async () => {
@@ -146,12 +181,24 @@ export default function Employees({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 lg:shrink-0">
           {monthly ? (
-            <button type="button" className="btn btn-secondary" onClick={() => openBulk("clear")} disabled={!tickets}>
-              <XIcon size={15} />
-              Clear entries
-            </button>
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => openBulk("add")} disabled={!employees.length}>
+                <span className="text-accent-300">
+                  <PlusGlyph />
+                </span>
+                Add to everyone
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => openBulk("take")} disabled={!tickets}>
+                <MinusGlyph />
+                Take from everyone
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => openBulk("clear")} disabled={!tickets}>
+                <XIcon size={15} />
+                Clear entries
+              </button>
+            </>
           ) : (
             <>
               <button type="button" className="btn btn-secondary" onClick={() => openBulk("in")} disabled={!employees.length}>
@@ -249,7 +296,9 @@ export default function Employees({
         title={action.title}
         description={action.description}
         confirmLabel={action.confirmLabel}
-      />
+      >
+        {action.body}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={Boolean(deleting)}
@@ -263,5 +312,32 @@ export default function Employees({
         confirmLabel="Remove"
       />
     </section>
+  );
+}
+
+/** How many entries to add or take, and what the hat looks like afterwards. */
+function ChangePreview({ employees, tickets, change, amount, onAmount }) {
+  const after = afterChange(employees, change);
+  return (
+    <>
+      <div className="mt-4 flex flex-col gap-3 rounded-xl border border-white/8 bg-white/3 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <EntryStepper
+          value={amount}
+          onChange={onAmount}
+          min={1}
+          suffix="each"
+          label="everyone"
+          inputLabel={change > 0 ? "Entries to add for everyone" : "Entries to take from everyone"}
+        />
+        <p className="text-xs whitespace-nowrap text-ink-400 tabular-nums" aria-live="polite">
+          {tickets} → <span className="font-display text-sm font-extrabold text-accent-300">{after.tickets}</span> in the hat
+        </p>
+      </div>
+      {after.emptied > 0 && (
+        <p className="mt-2 text-xs text-ink-500">
+          {plural(after.emptied, "teammate ends", "teammates end")} up with no entries.
+        </p>
+      )}
+    </>
   );
 }

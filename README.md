@@ -72,8 +72,10 @@ sign-in) and MongoDB via Mongoose.
 - **The roster** — follows the toggle. Weekly: flip a teammate *in* once their
   timesheet is in, or *out* if they're sitting the week out; "Everyone in /
   Everyone out" resets the whole team in one write. Monthly: −/+ (or type) each
-  teammate's entries, with their live odds; "Clear entries" starts a new
-  month. Changes are optimistic and save in the background (entry clicks are
+  teammate's entries, with their live odds; "Add to everyone" / "Take from
+  everyone" change the whole team by any amount in one atomic write (counts
+  stay within 0–99, with a preview of the hat first), and "Clear entries"
+  starts a new month. Changes are optimistic and save in the background (entry clicks are
   batched into one save).
 - **Profiles** — win history per teammate, plus editing and removal.
 - **Access** — Google sign-in restricted to the suffixes in `EMAIL_WHITELIST`.
