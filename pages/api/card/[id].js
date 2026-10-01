@@ -2,6 +2,7 @@ import connectDB from "@/db/connection";
 import Raffle from "@/db/models/Raffle";
 import { isValidId } from "@/lib/data";
 import { fullName } from "@/lib/format";
+import { drawnFrom } from "@/lib/raffles";
 import { isValidCardSignature } from "@/lib/share";
 import { shareImage } from "@/lib/share-image";
 import { isTheme, themeForDate } from "@/lib/themes";
@@ -38,14 +39,16 @@ export default async function card(req, res) {
   // Preview any skin while developing: &theme=halloween (or none).
   if (process.env.NODE_ENV !== "production" && req.query.theme) theme = isTheme(req.query.theme) ? req.query.theme : null;
   const name = fullName(winner);
+  const from = drawnFrom(raffle);
   const png = await shareImage({
     theme,
     seed: String(raffle._id),
-    eyebrow: "AND THE WINNER IS",
+    // Draws from before the monthly raffle have no kind.
+    eyebrow: raffle.kind ? `AND THE ${raffle.kind.toUpperCase()} WINNER IS` : "AND THE WINNER IS",
     title: name,
     titleSize: name.length <= 12 ? 92 : name.length <= 18 ? 78 : 62,
     sub: formatDate(raffle.date, raffle.timeZone),
-    footnote: raffle.poolSize ? `Picked at random from ${raffle.poolSize} teammates` : null,
+    footnote: from ? `Picked at random from ${from}` : null,
     bone: winner.firstName,
   });
 

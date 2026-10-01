@@ -7,7 +7,7 @@ import { fullName } from "@/lib/format";
  * motion: names flicker through the pool, slow down and stop on the winner.
  * The parent remounts it (via `key`) for every draw.
  */
-export default function NameShuffle({ participants, winner, reduced = false, onLanded, onTick }) {
+export default function NameShuffle({ participants, winner, caption = null, reduced = false, onLanded, onTick }) {
   const [shown, setShown] = useState(null);
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function NameShuffle({ participants, winner, reduced = false, onL
         <>
           <p className="font-display text-2xl font-extrabold text-ink-200">Ready to draw</p>
           <p className="mt-1 text-sm text-ink-500">
-            {participants.length} {participants.length === 1 ? "name" : "names"} in the hat
+            {caption ?? `${participants.length} ${participants.length === 1 ? "name" : "names"} in the hat`}
           </p>
         </>
       )}

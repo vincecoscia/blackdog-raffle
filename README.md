@@ -1,19 +1,37 @@
 # Blackdog Raffle
 
-The weekly draw for the Blackdog team. Everyone who turns in their timesheet gets
-one entry; hit **Draw a winner** and the dog fetches the winner's bone.
+The Blackdog team's raffles. Two draws, switched with the **Weekly / Monthly**
+toggle on the stage (or on the roster):
+
+- **Weekly** — everyone who turns in their timesheet gets one entry, so
+  everyone in has the same chance.
+- **Monthly** — each teammate's *entries* count is how many tickets they hold,
+  so 3 entries are three times the chance of 1.
+
+Hit **Draw a winner** and the dog fetches the winner's bone.
 
 Built with Next.js 16 (Pages Router), React 19, Tailwind CSS 4, next-auth (Google
 sign-in) and MongoDB via Mongoose.
 
 ## How it works
 
-- **The draw is server-side.** `POST /api/raffle` picks uniformly at random
-  from everyone in the draw with `crypto.randomInt` and records the win in the
-  same request. The animation only acts out a result that's already decided
-  and saved.
+- **The draw is server-side.** `POST /api/raffle { kind }` picks with
+  `crypto.randomInt` and records the win (with its `kind`, and for monthly
+  draws the winner's entries and the total) in the same request. Weekly picks
+  one person uniformly; monthly numbers every entry as a ticket and picks one
+  ticket uniformly (`pickWeighted` in [lib/draw.js](lib/draw.js)). The
+  animation only acts out a result that's already decided and saved.
+- **Data** — `Employee.inDraw` is the weekly in/out flag; `Employee.entries`
+  (0–99) is the monthly count. Before the monthly draw existed, `entries` held
+  the weekly flag as 0/1: such documents are read as `inDraw = entries > 0`,
+  and `backfillInDraw()` in [lib/data.js](lib/data.js) copies the flag across
+  once, before the first write that changes `entries`. No manual migration.
+- **Which raffle is showing** — `?raffle=monthly` in the URL, else a 6-hour
+  `raffle-kind` cookie (so a reload or a trip to a profile comes back to it),
+  else weekly.
 - **The animation** ([components/DogFetch.js](components/DogFetch.js)) — a 2D
-  SVG scene: a black dog next to a pile of bones, one per teammate. Each draw
+  SVG scene: a black dog next to a pile of bones, one per entry (monthly hats
+  over 32 entries are scaled to fit; bones rain in when you switch raffles). Each draw
   shuffles the pile and plays one of six random routines (dig, around the
   back, fake-out, sniffer, cannonball, zoomies); the dog brings back a mystery
   "?" bone and flips it over to reveal the name. Nothing on screen hints at the
@@ -51,9 +69,12 @@ sign-in) and MongoDB via Mongoose.
   `?variant=dig|around|fakeout|sniffer|cannonball|zoomies` forces a routine.
   Note that every draw is recorded, so delete test wins from the teammate's
   profile page afterwards.
-- **The roster** — flip a teammate *in* once their timesheet is in, or *out* if
-  they're sitting the week out. "Everyone in / Everyone out" resets the whole
-  team in one write. Changes are optimistic and save in the background.
+- **The roster** — follows the toggle. Weekly: flip a teammate *in* once their
+  timesheet is in, or *out* if they're sitting the week out; "Everyone in /
+  Everyone out" resets the whole team in one write. Monthly: −/+ (or type) each
+  teammate's entries, with their live odds; "Clear entries" starts a new
+  month. Changes are optimistic and save in the background (entry clicks are
+  batched into one save).
 - **Profiles** — win history per teammate, plus editing and removal.
 - **Access** — Google sign-in restricted to the suffixes in `EMAIL_WHITELIST`.
   Every API route requires a session.
@@ -71,7 +92,7 @@ build; `npm run lint` runs ESLint.
 
 `npm test` runs the fairness tests ([tests/fairness.test.js](tests/fairness.test.js)):
 millions of draws through the real pick function, checking every entry is
-equally likely, that draws are independent (no streaks, no "avoid the last
+equally likely, that monthly wins follow entry counts exactly, that draws are independent (no streaks, no "avoid the last
 winner"), and that the numbers quoted on the fairness page match simulation.
 Each check uses a 1-in-10,000 significance level, so a rare failure is worth
 re-running once before investigating.

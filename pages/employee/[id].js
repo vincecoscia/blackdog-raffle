@@ -4,50 +4,45 @@ import { useState } from "react";
 import { toast } from "react-toastify";
 import Avatar from "@/components/Avatar";
 import DrawToggle from "@/components/DrawToggle";
+import EntryStepper from "@/components/EntryStepper";
 import Field from "@/components/Field";
 import Header from "@/components/Header";
 import ConfirmDialog from "@/components/Modal";
-import { ArrowLeftIcon, PencilIcon, TrashIcon, TrophyIcon, XIcon } from "@/components/icons";
+import { ArrowLeftIcon, PencilIcon, TicketIcon, TrashIcon, TrophyIcon, XIcon } from "@/components/icons";
+import useEmployees from "@/hooks/useEmployees";
 import { getSession } from "@/lib/auth";
 import { api } from "@/lib/client";
 import { getEmployeeWithWins, getEmployees } from "@/lib/data";
 import { SHOW_WIN_COUNTS } from "@/lib/features";
 import { formatLongDate, fullName, plural, relativeDate } from "@/lib/format";
+import { formatChance, tally } from "@/lib/raffles";
 
-export default function EmployeePage({ employee: initial, wins: initialWins, poolSize: initialPool }) {
+export default function EmployeePage({ employee: initial, wins: initialWins, others }) {
   const router = useRouter();
-  const [employee, setEmployee] = useState(initial);
+  // The roster hook, for a roster of one: same optimistic saves as the home page.
+  const {
+    employees: [employee],
+    savingIds,
+    patch,
+    setInDraw,
+    setEntries,
+  } = useEmployees([initial]);
   const [wins, setWins] = useState(initialWins);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [winToDelete, setWinToDelete] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [savingDraw, setSavingDraw] = useState(false);
 
-  const inDraw = employee.entries > 0;
-  // How many are in the hat, kept in step with this teammate's own toggle.
-  const poolSize = initialPool - (initial.entries > 0 ? 1 : 0) + (inDraw ? 1 : 0);
+  // Odds in each raffle, kept in step with this teammate's own controls.
+  const weeklyPool = others.weekly + (employee.inDraw ? 1 : 0);
+  const monthlyTotal = others.entries + employee.entries;
   const name = fullName(employee);
-
-  const toggleDraw = async (next) => {
-    const previous = employee.entries;
-    setEmployee((e) => ({ ...e, entries: next ? 1 : 0 }));
-    setSavingDraw(true);
-    try {
-      await api(`/api/employees/${employee._id}`, { method: "PUT", body: { inDraw: next } });
-    } catch (err) {
-      setEmployee((e) => ({ ...e, entries: previous }));
-      toast.error(err.message);
-    } finally {
-      setSavingDraw(false);
-    }
-  };
 
   const saveDetails = async (values) => {
     setBusy(true);
     try {
       const { data } = await api(`/api/employees/${employee._id}`, { method: "PUT", body: values });
-      setEmployee(data);
+      patch(employee._id, data);
       setEditing(false);
       toast.success("Profile updated.");
     } catch (err) {
@@ -127,18 +122,40 @@ export default function EmployeePage({ employee: initial, wins: initialWins, poo
       <div
         className={`mt-4 grid animate-fade-up gap-4 [animation-delay:.08s] ${SHOW_WIN_COUNTS ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
       >
-        <Stat label="This week">
+        <Stat label="Weekly draw">
           <div className="pt-1">
-            <DrawToggle checked={inDraw} onChange={toggleDraw} saving={savingDraw} size="lg" />
+            <DrawToggle
+              checked={employee.inDraw}
+              onChange={(next) => setInDraw(employee._id, next)}
+              saving={savingIds.has(employee._id)}
+              size="lg"
+            />
           </div>
-          <span className="mt-2 block text-xs text-ink-500">Flip on once their timesheet is in.</span>
-        </Stat>
-        <Stat label="Odds this draw">
-          <span className="font-display text-4xl font-extrabold tabular-nums text-ink-50">
-            {inDraw && poolSize > 0 ? `1 in ${poolSize}` : "—"}
+          <span className="mt-3 block text-xs text-ink-500">
+            {employee.inDraw ? (
+              <>
+                <strong className="font-semibold text-ink-200">1 in {weeklyPool}</strong> chance this week ·{" "}
+                {plural(weeklyPool, "teammate")} in the hat
+              </>
+            ) : (
+              "Flip on once their timesheet is in."
+            )}
           </span>
-          <span className="mt-1 block text-xs text-ink-500">
-            {inDraw ? `${plural(poolSize, "teammate")} in the hat` : "Not in this draw"}
+        </Stat>
+        <Stat label="Monthly draw">
+          <div className="pt-1">
+            <EntryStepper value={employee.entries} onChange={(n) => setEntries(employee._id, n)} label={name} size="lg" />
+          </div>
+          <span className="mt-3 flex items-center gap-1.5 text-xs text-ink-500">
+            <TicketIcon size={12} className="shrink-0" />
+            {employee.entries > 0 ? (
+              <span>
+                <strong className="font-semibold text-ink-200">{formatChance(employee.entries, monthlyTotal)}</strong> chance
+                this month · {employee.entries} of {plural(monthlyTotal, "entry", "entries")}
+              </span>
+            ) : (
+              "No entries this month yet."
+            )}
           </span>
         </Stat>
         {SHOW_WIN_COUNTS && (
@@ -175,7 +192,11 @@ export default function EmployeePage({ employee: initial, wins: initialWins, poo
                     <p className="font-semibold text-ink-50">{formatLongDate(win.date)}</p>
                     <p className="text-xs text-ink-500">
                       {relativeDate(win.date)}
-                      {win.poolSize ? ` · 1 in ${win.poolSize}` : ""}
+                      {win.kind === "monthly"
+                        ? ` · Monthly · ${win.entries} of ${plural(win.totalEntries, "entry", "entries")}`
+                        : win.poolSize
+                          ? ` · Weekly · 1 in ${win.poolSize}`
+                          : ""}
                     </p>
                   </div>
                   <button
@@ -272,7 +293,9 @@ export async function getServerSideProps({ req, res, params }) {
   const [result, employees] = await Promise.all([getEmployeeWithWins(params.id), getEmployees()]);
   if (!result) return { notFound: true };
 
-  const poolSize = employees.filter((e) => e.entries > 0).length;
+  // Everyone else's share of each raffle; the page adds this teammate's own.
+  const rest = employees.filter((e) => e._id !== result.employee._id);
+  const others = { weekly: tally(rest, "weekly").people, entries: tally(rest, "monthly").tickets };
   const wins = SHOW_WIN_COUNTS ? result.wins : [];
-  return { props: { session, employee: result.employee, wins, poolSize } };
+  return { props: { session, employee: result.employee, wins, others } };
 }

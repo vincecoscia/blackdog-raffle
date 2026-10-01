@@ -17,7 +17,8 @@ import {
 
 /**
  * The draw, as a 2D cartoon: a black dog sits in the spotlight next to a pile
- * of bones — one per teammate, their name printed on it. `draw(winner)`
+ * of bones — one per entry, the teammate's name printed on it (one each in the
+ * weekly draw; as many as their entries in the monthly one). `draw(winner)`
  * shuffles the pile, then plays one of several routines (dig, go around the
  * back, fake-out, sniff-and-pounce, cannonball, zoomies) in which the dog
  * pulls a mystery bone out of the pile, carries it back, sits, and flips it
@@ -34,10 +35,11 @@ import {
  * engine hands { draw, reset } to the parent via `onReady` (this is loaded
  * through next/dynamic, which doesn't forward refs).
  */
-export default function DogFetch({ participants, covered = false, onReady, onLanded, onSuspense }) {
+export default function DogFetch({ participants, pileKey = null, covered = false, onReady, onLanded, onSuspense }) {
   const host = useRef(null);
   const engine = useRef(null);
   const callbacks = useRef({ onReady, onLanded, onSuspense });
+  const lastPile = useRef(pileKey);
 
   useEffect(() => {
     callbacks.current = { onReady, onLanded, onSuspense };
@@ -54,9 +56,13 @@ export default function DogFetch({ participants, covered = false, onReady, onLan
     };
   }, []);
 
+  // A new `pileKey` (switching between the weekly and monthly draw) brings in
+  // a whole new pile; other changes just update the one that's there.
   useEffect(() => {
-    engine.current?.setParticipants(participants);
-  }, [participants]);
+    const fresh = lastPile.current !== pileKey;
+    lastPile.current = pileKey;
+    engine.current?.setParticipants(participants, { fresh });
+  }, [participants, pileKey]);
 
   useEffect(() => {
     engine.current?.setCovered(covered);
@@ -94,6 +100,7 @@ const SPOT_X = 150; // where the dog sits, in the spotlight
 const RUN_SPEED = 400;
 const GRAVITY = 1500;
 const MIN_BONES = 22; // pad small rosters with blank bones so the pile looks full
+const MAX_BONES = 32; // bigger monthly hats are scaled to fit: the pile is only ~3 bones wide, so more would tower out of frame
 const BONE_REST = 26; // bone centre height when lying on the ground
 const HOME_LEFT = PILE_X - PILE_HALF - 75;
 const CAM_HOME = { x: HOME_LEFT, y: -300, w: SPOT_X + 330 - HOME_LEFT, h: 340 };
@@ -740,16 +747,46 @@ function createEngine(host, callbacks) {
     return order;
   };
 
-  const rebuildBones = (list) => {
+  /**
+   * Bones per teammate: one per ticket (so always one in the weekly draw). A
+   * monthly hat bigger than MAX_BONES is scaled down in proportion, everyone
+   * keeping at least one bone. It's only the picture — the server's pick
+   * always uses the real entries.
+   */
+  const boneCounts = (list) => {
+    const tickets = list.map((p) => Math.max(1, p.tickets ?? 1));
+    const total = tickets.reduce((a, b) => a + b, 0);
+    if (total <= MAX_BONES) return tickets;
+    const budget = Math.max(MAX_BONES, list.length);
+    const exact = tickets.map((t) => (t * budget) / total);
+    const counts = exact.map((q) => Math.max(1, Math.floor(q)));
+    let spare = budget - counts.reduce((a, b) => a + b, 0);
+    for (const [, i] of exact.map((q, i) => [q - Math.floor(q), i]).sort((a, b) => b[0] - a[0])) {
+      if (spare-- <= 0) break;
+      counts[i] += 1;
+    }
+    return counts;
+  };
+
+  /** A fresh pile. With `rain`, the bones drop in from above, bottom layer first. */
+  const rebuildBones = (list, { rain = false } = {}) => {
     for (const b of bones) b.g.remove();
     labelMap = labelsFor(list);
-    bones = list.map((p) => makeBone(p._id, labelMap.get(p._id)));
-    for (let i = list.length; i < MIN_BONES; i++) bones.push(makeBone(`blank-${i}`, null));
+    const counts = boneCounts(list);
+    bones = list.flatMap((p, i) => Array.from({ length: counts[i] }, () => makeBone(p._id, labelMap.get(p._id))));
+    for (let i = bones.length; i < MIN_BONES; i++) bones.push(makeBone(`blank-${i}`, null));
     for (const b of layoutHeap(bones)) {
       Object.assign(b, { x: b.slot.x, y: b.slot.y, r: b.slot.r, mode: "rest" });
+      if (rain) {
+        const drop = rand(330, 430);
+        Object.assign(b, { x: b.x + rand(-40, 40), y: b.y - drop, r: rand(-1.4, 1.4), mode: "tween" });
+        // arc = drop / 4 turns the tween's straight line into a gravity fall.
+        b.tween = { from: { x: b.x, y: b.y, r: b.r }, t: -(b.slot.order * 0.02 + rand(0, 0.1)), dur: rand(0.4, 0.5), arc: drop / 4, spin: 0, quiet: true };
+      }
       pileLayer.appendChild(b.g);
       placeBone(b);
     }
+    if (rain) wake();
   };
 
   // ---- effects ---------------------------------------------------------------
@@ -1433,7 +1470,7 @@ function createEngine(host, callbacks) {
   pileLayer.addEventListener("pointerdown", onBonePointer);
   frontLayer.addEventListener("pointerdown", onBonePointer);
 
-  const reset = () => {
+  const reset = ({ rain = false } = {}) => {
     queue = [];
     step = null;
     mode = "idle";
@@ -1459,16 +1496,20 @@ function createEngine(host, callbacks) {
       chomp: 0,
     });
     talks = [];
-    rebuildBones(pending ?? latest);
+    rebuildBones(pending ?? latest, { rain });
     pending = null;
     wake();
   };
 
   let latest = [];
-  const setParticipants = (list) => {
+  const setParticipants = (list, { fresh = false } = {}) => {
     latest = list;
-    // Mid-draw or while the winner is on show, apply it at the next draw.
-    if (mode === "idle") rebuildBones(list);
+    // Bones only rain in if someone's watching; otherwise the pile is just there.
+    const rain = fresh && onScreen;
+    if (mode === "idle") rebuildBones(list, { rain });
+    // A different raffle while the last winner is on show: clear the stage for it.
+    else if (fresh && mode === "present") reset({ rain });
+    // Mid-draw, or a roster tweak while the winner is on show: apply it at the next draw.
     else pending = list;
   };
 
@@ -1492,8 +1533,8 @@ function createEngine(host, callbacks) {
         b.r = lerp(tw.from.r + tw.spin, b.slot.r, easeInOut(k));
         if (k >= 1) {
           b.mode = "rest";
-          shuffleLeft -= 1;
-          clack(0.35);
+          if (!tw.quiet) shuffleLeft -= 1;
+          clack(tw.quiet ? 0.2 : 0.35);
         }
         placeBone(b);
       } else if (b.mode === "fly") {

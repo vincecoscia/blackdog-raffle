@@ -3,11 +3,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "react-toastify";
 import NameShuffle from "./NameShuffle";
+import RaffleSwitch from "./RaffleSwitch";
 import WinnerReveal from "./WinnerReveal";
-import { ExpandIcon, ShrinkIcon, SparklesIcon, Spinner, UsersIcon, VolumeIcon, VolumeOffIcon } from "./icons";
+import { ExpandIcon, ShrinkIcon, SparklesIcon, Spinner, TicketIcon, UsersIcon, VolumeIcon, VolumeOffIcon } from "./icons";
 import { api } from "@/lib/client";
 import { celebrate, preloadConfetti } from "@/lib/confetti";
 import { plural } from "@/lib/format";
+import { ticketsFor } from "@/lib/raffles";
 import {
   isSoundEnabled,
   isSoundEnabledOnServer,
@@ -37,21 +39,27 @@ function detectRenderer() {
 
 /** Keys typed into controls shouldn't trigger the big-screen shortcuts. */
 const isFromControl = (e) =>
-  e.target instanceof Element && Boolean(e.target.closest("button, a, input, textarea, select, [contenteditable]"));
+  e.target instanceof Element &&
+  Boolean(e.target.closest("button, a, input, textarea, select, [contenteditable], [role=radio]"));
 
 /**
  * The raffle: orchestrates the draw (server call, sound, confetti, reveal) and
  * hands the visual to the dog-fetches-a-bone scene, or to a simple name
  * shuffle for users who prefer reduced motion. "Big screen" mode turns the
  * stage into a full-screen presentation for drawing live in a meeting.
+ *
+ * `kind` is the raffle being drawn: weekly (one entry per timesheet) or
+ * monthly (one ticket per entry).
  */
-export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = false }) {
+export default function RaffleSlotMachine({ employees, kind = "weekly", onKindChange, onBusyChange, onWinner, chatEnabled = false }) {
+  const monthly = kind === "monthly";
   const participants = useMemo(
     () =>
-      employees
-        .filter((e) => e.entries > 0)
-        .map(({ _id, firstName, lastName, imageURL }) => ({ _id, firstName, lastName, imageURL })),
-    [employees]
+      employees.flatMap((e) => {
+        const tickets = ticketsFor(e, kind);
+        return tickets > 0 ? [{ _id: e._id, firstName: e.firstName, lastName: e.lastName, imageURL: e.imageURL, tickets }] : [];
+      }),
+    [employees, kind]
   );
   const renderer = useSyncExternalStore(noopSubscribe, detectRenderer, () => "pending");
   const soundOn = useSyncExternalStore(subscribeSound, isSoundEnabled, isSoundEnabledOnServer);
@@ -86,7 +94,23 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
   }, []);
 
   const players = participants.length;
+  const tickets = participants.reduce((sum, p) => sum + p.tickets, 0);
   const busy = phase === "drawing" || phase === "spinning";
+
+  // The roster's raffle switch locks while a draw is running, like this one.
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
+  // Switching raffles clears the stage: the scene brings in the new pile (and
+  // puts away a winner that's still on show), so the button starts over too.
+  const changeKind = (next) => {
+    if (busy || next === kind) return;
+    unlockAudio(); // the new pile clatters in
+    setShuffle(null);
+    if (phase === "landed") setPhase("idle");
+    onKindChange?.(next);
+  };
 
   /** Screen flash + a little kick to the frame as the bone is revealed. */
   const landingFx = useCallback(() => {
@@ -145,6 +169,7 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
       ({ data: result.current } = await api("/api/raffle", {
         method: "POST",
         body: {
+          kind,
           theme: scene?.theme ?? null, // so the winner card wears the same skin
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
@@ -162,7 +187,7 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
     } else {
       setShuffle({ key: raffle._id, winner });
     }
-  }, [busy, scene, players, renderer]);
+  }, [busy, scene, players, renderer, kind]);
 
   // After the reveal closes, the dog keeps showing off the bone until the next draw.
   const closeReveal = () => setReveal(null);
@@ -241,14 +266,21 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
       >
         <div className={big ? "flex min-h-0 flex-1 flex-col" : "rounded-[1.4rem] bg-ink-900/90 p-4 sm:p-6"}>
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="eyebrow pt-2.5">Blackdog weekly draw</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="min-w-0">
+              <RaffleSwitch value={kind} onChange={changeKind} disabled={busy} />
+              <div key={kind} className="mt-3 flex animate-fade-up flex-wrap items-center gap-2 [animation-duration:.4s]">
                 <span className="chip">
                   <UsersIcon size={13} className="text-accent-400" />
                   {plural(players, "teammate")} in the draw
                 </span>
-                {players > 0 && <span className="chip text-ink-400">1 in {players} chance each</span>}
+                {monthly
+                  ? tickets > 0 && (
+                      <span className="chip text-ink-400">
+                        <TicketIcon size={13} className="text-accent-400" />
+                        {plural(tickets, "entry", "entries")} in the hat
+                      </span>
+                    )
+                  : players > 0 && <span className="chip text-ink-400">1 in {players} chance each</span>}
               </div>
             </div>
             <div className="flex gap-2">
@@ -285,16 +317,21 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
             }`}
           >
             {players === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                <SparklesIcon size={28} className="text-ink-600" />
-                <p className="mt-3 font-display text-lg font-bold text-ink-300">No bones in the pile</p>
-                <p className="mt-1 text-sm text-ink-500">Flip teammates into the draw below to fill it up.</p>
+              <div key={kind} className="flex h-full animate-fade-up flex-col items-center justify-center px-6 text-center">
+                {monthly ? <TicketIcon size={28} className="text-ink-600" /> : <SparklesIcon size={28} className="text-ink-600" />}
+                <p className="mt-3 font-display text-lg font-bold text-ink-300">
+                  {monthly ? "No monthly entries yet" : "No bones in the pile"}
+                </p>
+                <p className="mt-1 text-sm text-ink-500">
+                  {monthly ? "Give teammates their entries below — each one is a bone in the pile." : "Flip teammates into the draw below to fill it up."}
+                </p>
               </div>
             ) : (
               <>
                 {renderer === "scene" && (
                   <DogFetch
                     participants={participants}
+                    pileKey={kind}
                     covered={Boolean(reveal)}
                     onReady={setScene}
                     onLanded={landed}
@@ -304,8 +341,9 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
                 {showShuffle && (
                   <div className="absolute inset-0 bg-ink-950">
                     <NameShuffle
-                      key={shuffle?.key ?? "idle"}
+                      key={shuffle?.key ?? `idle-${kind}`}
                       participants={participants}
+                      caption={monthly ? `${plural(tickets, "entry", "entries")} in the hat` : null}
                       winner={shuffle?.winner ?? null}
                       reduced={renderer === "dom"}
                       onLanded={landed}
@@ -337,13 +375,18 @@ export default function RaffleSlotMachine({ employees, onWinner, chatEnabled = f
             </button>
             <p className="text-sm text-ink-400 sm:ml-2" aria-live="polite">
               {players === 0
-                ? "Nobody's in the draw yet — flip teammates in below."
+                ? monthly
+                  ? "Nobody has monthly entries yet — add them below."
+                  : "Nobody's in the draw yet — flip teammates in below."
                 : big
                   ? "Press Space to draw · Esc to exit"
                   : (
                     <>
-                      One bone each, same shot for everyone.{" "}
-                      <Link href="/fairness" className="font-semibold text-accent-300 hover:text-accent-200">
+                      {monthly ? "Every entry is a ticket — more entries, better odds." : "One bone each, same shot for everyone."}{" "}
+                      <Link
+                        href={monthly ? "/fairness#monthly" : "/fairness"}
+                        className="font-semibold text-accent-300 hover:text-accent-200"
+                      >
                         How the draw works
                       </Link>
                     </>

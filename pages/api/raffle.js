@@ -1,5 +1,6 @@
-import { route } from "@/lib/api";
+import { route, ApiError } from "@/lib/api";
 import { drawWinner, getRecentWinners } from "@/lib/data";
+import { DEFAULT_KIND, isRaffleKind } from "@/lib/raffles";
 import { cardPath } from "@/lib/share";
 import { isTheme } from "@/lib/themes";
 
@@ -20,12 +21,15 @@ export default route({
     res.status(200).json({ success: true, data: await getRecentWinners(limit) });
   },
 
-  // POST /api/raffle { theme, timeZone } — draw a winner. The server picks and
-  // records the win atomically; the client only animates toward the result.
-  // `theme` (the skin on screen) and `timeZone` only style the winner card.
+  // POST /api/raffle { kind, theme, timeZone } — draw a winner of the weekly
+  // (default) or monthly raffle. The server picks and records the win
+  // atomically; the client only animates toward the result. `theme` (the skin
+  // on screen) and `timeZone` only style the winner card.
   async POST(req, res, session) {
-    const { theme, timeZone } = req.body ?? {};
+    const { kind = DEFAULT_KIND, theme, timeZone } = req.body ?? {};
+    if (!isRaffleKind(kind)) throw new ApiError(400, "kind must be weekly or monthly.");
     const result = await drawWinner({
+      kind,
       drawnBy: session.user.email,
       theme: isTheme(theme) ? theme : null,
       timeZone: validTimeZone(timeZone),

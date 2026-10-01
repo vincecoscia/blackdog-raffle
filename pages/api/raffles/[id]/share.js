@@ -4,6 +4,7 @@ import { route, ApiError } from "@/lib/api";
 import { isValidId } from "@/lib/data";
 import { fullName } from "@/lib/format";
 import { postWinnerToChat, winnerMessage, winnerTextMessage } from "@/lib/google-chat";
+import { drawnFrom } from "@/lib/raffles";
 import { cardPath, originFrom } from "@/lib/share";
 
 export default route({
@@ -34,7 +35,16 @@ export default route({
     );
     if (!claimed) throw new ApiError(409, "This winner has already been posted to Google Chat.");
 
-    const details = { raffleId: id, name, firstName: raffle.winner.firstName, dateLabel, poolSize: raffle.poolSize, imageUrl, origin };
+    const details = {
+      raffleId: id,
+      kind: raffle.kind,
+      name,
+      firstName: raffle.winner.firstName,
+      dateLabel,
+      from: drawnFrom(raffle),
+      imageUrl,
+      origin,
+    };
     try {
       await postWinnerToChat(winnerMessage(details), winnerTextMessage(details));
     } catch (err) {

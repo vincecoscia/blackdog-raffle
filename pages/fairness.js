@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { api } from "@/lib/client";
 import { getEmployees } from "@/lib/data";
 import { fairnessDemo } from "@/lib/draw";
+import { formatChance, tally } from "@/lib/raffles";
 import {
   chanceNeverWon,
   chanceSomeoneRepeats,
@@ -25,7 +26,7 @@ const PRESETS = [
 const fmt = new Intl.NumberFormat("en-US");
 const percent = (p) => (p > 0.995 && p < 1 ? ">99%" : p < 0.005 && p > 0 ? "<1%" : `${Math.round(p * 100)}%`);
 
-export default function Fairness({ poolSize, firstRun }) {
+export default function Fairness({ poolSize, monthly, firstRun }) {
   const n = poolSize;
   const [draws, setDraws] = useState(26);
 
@@ -42,15 +43,19 @@ export default function Fairness({ poolSize, firstRun }) {
         <p className="eyebrow">Fair and square</p>
         <h1 className="mt-2 font-display text-4xl font-extrabold text-balance text-ink-50 sm:text-5xl">How the draw works</h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-ink-300">
-          Everyone whose timesheet is in gets <strong className="text-ink-50">exactly one entry</strong>, and the computer picks one
-          entry completely at random. With {n} people in the draw, everyone&apos;s chance is{" "}
-          <strong className="text-ink-50">1 in {n}</strong> — every single time.
+          Every entry is a ticket, and the computer picks one ticket completely at random. In the{" "}
+          <strong className="text-ink-50">weekly draw</strong>, everyone whose timesheet is in gets exactly one entry — with {n}{" "}
+          people in, everyone&apos;s chance is <strong className="text-ink-50">1 in {n}</strong>, every single time. In the{" "}
+          <a href="#monthly" className="font-semibold text-accent-300 hover:text-accent-200">
+            monthly draw
+          </a>
+          , your chance is your entries out of all the entries in the hat.
         </p>
       </section>
 
       <section className="mt-10 grid animate-fade-up gap-4 [animation-delay:.08s] sm:grid-cols-3">
-        <Point icon={<TicketIcon size={18} />} title="One entry each">
-          No extra tickets, no favourites. Nobody&apos;s odds depend on anything but being in the draw.
+        <Point icon={<TicketIcon size={18} />} title="Tickets, not favourites">
+          One entry each in the weekly draw; one ticket per entry in the monthly draw. Nothing else changes anyone&apos;s odds.
         </Point>
         <Point icon={<ShieldIcon size={18} />} title="Picked before the dog moves">
           The server picks the winner using secure randomness (the kind used for encryption keys) and records it straight away. The
@@ -61,6 +66,8 @@ export default function Fairness({ poolSize, firstRun }) {
           that doesn&apos;t remember its last flip.
         </Point>
       </section>
+
+      <MonthlyDraw {...monthly} />
 
       <section aria-labelledby="repeats" className="mt-14 animate-fade-up [animation-delay:.12s]">
         <p className="eyebrow">The question everyone asks</p>
@@ -134,11 +141,56 @@ export default function Fairness({ poolSize, firstRun }) {
           What gets recorded
         </h2>
         <p className="mt-2 leading-relaxed text-ink-300">
-          Each draw saves the date, the winner, how many people were in the draw, and who pressed the button. Nobody can pick or
-          nudge the result: the page asks the server for a winner, and the server decides on its own.
+          Each draw saves the date, whether it was the weekly or the monthly draw, the winner, how many people were in the draw
+          (and for the monthly draw, how many entries), and who pressed the button. Nobody can pick or nudge the result: the page
+          asks the server for a winner, and the server decides on its own.
         </p>
       </section>
     </div>
+  );
+}
+
+/** How the monthly draw weighs entries, with the numbers from the hat as it stands. */
+function MonthlyDraw({ people, tickets }) {
+  // With nothing in the hat yet, explain with round numbers instead.
+  const total = tickets || 100;
+  return (
+    <section id="monthly" aria-labelledby="monthly-heading" className="mt-14 scroll-mt-24 animate-fade-up [animation-delay:.1s]">
+      <p className="eyebrow">The monthly draw</p>
+      <h2 id="monthly-heading" className="mt-2 font-display text-2xl font-extrabold text-ink-50 sm:text-3xl">
+        More entries, better odds — exactly
+      </h2>
+      <div className="mt-4 space-y-4 leading-relaxed text-ink-300">
+        <p>
+          In the monthly draw every entry is its own ticket. The computer numbers all the tickets in the hat, picks one with the
+          same secure pick as the weekly draw, and whoever holds that ticket wins. Someone with 3 entries is exactly three times
+          as likely to win as someone with 1 — no more, no less.
+        </p>
+      </div>
+      <div className="card mt-6 p-5 sm:p-6">
+        <p className="text-sm font-semibold text-ink-100">
+          {tickets ? (
+            <>
+              Right now there are <span className="font-display text-lg text-accent-300">{fmt.format(tickets)}</span> entries in
+              the hat, from {people} {people === 1 ? "teammate" : "teammates"}. So…
+            </>
+          ) : (
+            <>
+              Say there are <span className="font-display text-lg text-accent-300">100</span> entries in the hat. Then…
+            </>
+          )}
+        </p>
+        <dl className="mt-5 grid gap-4 sm:grid-cols-3">
+          {[1, 3, 5].map((held) => (
+            <Figure
+              key={held}
+              value={formatChance(held, total)}
+              label={`chance of winning if ${held} of those ${held === 1 ? "is yours" : "are yours"}`}
+            />
+          ))}
+        </dl>
+      </div>
+    </section>
   );
 }
 
@@ -198,7 +250,7 @@ function Simulation({ n, firstRun }) {
       </div>
       <p className="mt-3 leading-relaxed text-ink-300">
         This runs the exact same code the real draw uses, 100,000 times, with {n} entries (nothing is recorded). Each bar is one
-        entry; if the draw favoured anyone, their bar would stick out.
+        entry; if the draw favoured anyone, their bar would stick out. The monthly draw picks its tickets with this same code.
       </p>
 
       <div className="card mt-5 p-4 sm:p-6">
@@ -243,9 +295,10 @@ function Simulation({ n, firstRun }) {
       </div>
 
       <p className="mt-4 text-sm leading-relaxed text-ink-400">
-        We also run an automated test suite of 18 checks that puts millions of draws through the same code. It checks that every
-        entry is equally likely, that one draw never influences the next, and it&apos;s been confirmed to catch rigged draws —
-        including one that quietly stops anyone winning twice in a row.
+        We also run an automated test suite of 23 checks that puts millions of draws through the same code. It checks that every
+        entry is equally likely, that monthly wins follow entry counts exactly, that one draw never influences the next, and
+        it&apos;s been confirmed to catch rigged draws — including one that quietly stops anyone winning twice in a row, and one
+        that ignores monthly entries.
       </p>
     </section>
   );
@@ -255,10 +308,12 @@ export async function getServerSideProps({ req, res }) {
   const session = await getSession(req, res);
   if (!session) return { redirect: { destination: "/", permanent: false } };
   const employees = await getEmployees();
-  const inDraw = employees.filter((e) => e.entries > 0).length;
+  const inDraw = tally(employees, "weekly").people;
   // With fewer than two people in, explain with the whole team instead.
   const poolSize = inDraw >= 2 ? inDraw : Math.max(2, employees.length || 25);
 
   // The first demo run happens here so the chart is there on page load.
-  return { props: { session, poolSize, firstRun: fairnessDemo(poolSize, DEMO_DRAWS) } };
+  return {
+    props: { session, poolSize, monthly: tally(employees, "monthly"), firstRun: fairnessDemo(poolSize, DEMO_DRAWS) },
+  };
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "react-toastify";
 import Avatar from "@/components/Avatar";
 import DrawToggle from "@/components/DrawToggle";
+import EntryStepper from "@/components/EntryStepper";
 import Field from "@/components/Field";
 import Header from "@/components/Header";
 import { ArrowLeftIcon, PlusIcon, Spinner } from "@/components/icons";
@@ -11,7 +12,7 @@ import { getSession } from "@/lib/auth";
 import { api } from "@/lib/client";
 import { fullName } from "@/lib/format";
 
-const EMPTY = { firstName: "", lastName: "", email: "", imageURL: "", inDraw: true };
+const EMPTY = { firstName: "", lastName: "", email: "", imageURL: "", inDraw: true, entries: 0 };
 
 export default function CreateEmployee() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function CreateEmployee() {
     setBusy(true);
     try {
       const { data } = await api("/api/employees", { method: "POST", body: values });
-      toast.success(`${fullName(data)} is in the draw!`);
+      toast.success(data.inDraw ? `${fullName(data)} is in the draw!` : `${fullName(data)} was added.`);
       router.push("/");
     } catch (err) {
       toast.error(err.message);
@@ -75,10 +76,20 @@ export default function CreateEmployee() {
               hint="Optional. Without a photo they get a coloured initials avatar."
               className="sm:col-span-2"
             />
-            <div className="sm:col-span-2">
+            <div>
               <span className="label">This week&apos;s draw</span>
-              <div className="pt-1">
+              <div className="flex min-h-9 items-center">
                 <DrawToggle checked={values.inDraw} onChange={(inDraw) => setValues((v) => ({ ...v, inDraw }))} />
+              </div>
+            </div>
+            <div>
+              <span className="label">Monthly entries</span>
+              <div className="flex min-h-9 items-center">
+                <EntryStepper
+                  value={values.entries}
+                  onChange={(entries) => setValues((v) => ({ ...v, entries }))}
+                  label={fullName(preview)}
+                />
               </div>
             </div>
           </div>

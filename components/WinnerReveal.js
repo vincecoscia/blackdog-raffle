@@ -10,7 +10,8 @@ import Avatar from "./Avatar";
 import { CheckIcon, DownloadIcon, ShareIcon, SparklesIcon, Spinner, TrophyIcon } from "./icons";
 import { api } from "@/lib/client";
 import { sparkle } from "@/lib/confetti";
-import { formatLongDate, fullName } from "@/lib/format";
+import { formatLongDate, fullName, plural } from "@/lib/format";
+import { formatChance } from "@/lib/raffles";
 
 const TILT_DEG = 7;
 
@@ -122,7 +123,7 @@ export default function WinnerReveal({ result, onClose, onAgain, chatEnabled = f
 
                 <p className="eyebrow mt-7 flex animate-fade-up items-center justify-center gap-2 [animation-delay:.15s]">
                   <TrophyIcon size={14} />
-                  And the winner is
+                  And the {result.kind === "monthly" ? "monthly" : "weekly"} winner is
                   <TrophyIcon size={14} />
                 </p>
 
@@ -133,17 +134,35 @@ export default function WinnerReveal({ result, onClose, onAgain, chatEnabled = f
                   {name}
                 </DialogTitle>
 
-                <p className="mt-4 animate-fade-up text-sm text-ink-300 [animation-delay:.3s]">
-                  Congratulations, {winner.firstName}! Picked from{" "}
-                  <span className="font-semibold text-accent-300">
-                    {result.poolSize}
-                  </span>{" "}
-                  teammates who turned in their timesheets — a{" "}
-                  <span className="font-semibold text-accent-300">
-                    1 in {result.poolSize}
-                  </span>{" "}
-                  shot.
-                </p>
+                {result.kind === "monthly" ? (
+                  <p className="mt-4 animate-fade-up text-sm text-ink-300 [animation-delay:.3s]">
+                    Congratulations, {winner.firstName}! Your{" "}
+                    <span className="font-semibold text-accent-300">
+                      {plural(result.entries, "entry", "entries")}
+                    </span>{" "}
+                    {result.entries === 1 ? "was" : "were"} in a hat of{" "}
+                    <span className="font-semibold text-accent-300">
+                      {result.totalEntries}
+                    </span>{" "}
+                    — a{" "}
+                    <span className="font-semibold text-accent-300">
+                      {formatChance(result.entries, result.totalEntries)}
+                    </span>{" "}
+                    shot.
+                  </p>
+                ) : (
+                  <p className="mt-4 animate-fade-up text-sm text-ink-300 [animation-delay:.3s]">
+                    Congratulations, {winner.firstName}! Picked from{" "}
+                    <span className="font-semibold text-accent-300">
+                      {result.poolSize}
+                    </span>{" "}
+                    teammates who turned in their timesheets — a{" "}
+                    <span className="font-semibold text-accent-300">
+                      1 in {result.poolSize}
+                    </span>{" "}
+                    shot.
+                  </p>
+                )}
                 {result.raffle?.date && (
                   <p className="mt-1 animate-fade-up text-xs text-ink-500 [animation-delay:.35s]">
                     {formatLongDate(result.raffle.date)}

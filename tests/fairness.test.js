@@ -11,7 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { pickIndex, pickWinner, simulate } from "../lib/draw.js";
+import { pickIndex, pickWeighted, pickWinner, simulate, simulateWeighted } from "../lib/draw.js";
 import {
   chanceNeverWon,
   chanceSomeoneRepeats,
@@ -27,6 +27,13 @@ const assertLooksUniform = (counts, label) => {
   const stat = chiSquare(counts);
   const p = chiSquarePValue(stat, counts.length - 1);
   assert.ok(p > ALPHA, `${label}: counts too uneven to be chance (chi² = ${stat.toFixed(1)}, p = ${p.toExponential(2)})`);
+  return p;
+};
+
+const assertMatchesShares = (counts, shares, label) => {
+  const stat = chiSquare(counts, shares);
+  const p = chiSquarePValue(stat, counts.length - 1);
+  assert.ok(p > ALPHA, `${label}: wins don't follow the entries (chi² = ${stat.toFixed(1)}, p = ${p.toExponential(2)})`);
   return p;
 };
 
@@ -90,6 +97,38 @@ describe("every entry has the same chance", () => {
       counts.set(w, counts.get(w) + 1);
     }
     assertLooksUniform([...counts.values()], "25 people via pickWinner");
+  });
+});
+
+describe("monthly draw: chances follow entries", () => {
+  test("rejects an empty pool, and anyone without a whole entry", () => {
+    assert.throws(() => pickWeighted([], (p) => p.entries), RangeError);
+    for (const bad of [0, -1, 1.5, NaN, undefined]) {
+      assert.throws(() => pickWeighted([{ entries: 2 }, { entries: bad }], (p) => p.entries), RangeError);
+    }
+  });
+
+  test("a lone entrant always wins, however many entries they have", () => {
+    const pool = [{ _id: "only", entries: 7 }];
+    for (let i = 0; i < 1000; i++) assert.equal(pickWeighted(pool, (p) => p.entries), pool[0]);
+  });
+
+  test("wins are proportional to entries (3 entries win three times as often as 1)", () => {
+    const tickets = [1, 2, 3, 5, 8, 1, 4, 12, 1, 3];
+    assertMatchesShares(simulateWeighted(tickets, 300_000), tickets, "mixed entry counts");
+  });
+
+  test("every ticket counts, including the first and the last in the hat", () => {
+    // Tiny holders at both ends of a big one: an off-by-one in the ticket walk
+    // would starve (or double) the edges.
+    const tickets = [1, 40, 1];
+    const counts = simulateWeighted(tickets, 210_000);
+    assert.ok(counts.every((c) => c > 0));
+    assertMatchesShares(counts, tickets, "edges of the hat");
+  });
+
+  test("equal entries are an even draw, same as the weekly one", () => {
+    assertLooksUniform(simulateWeighted(new Array(25).fill(4), 250_000), "25 people with 4 entries each");
   });
 });
 
